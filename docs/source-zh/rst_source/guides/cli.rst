@@ -27,7 +27,13 @@
      - 选择已发现的机器人或仿真环境。
    * - ``--planner``
      - ``api``
-     - ``api``、``claude_code``、``codex`` 或 ``flash``。
+     - ``api``、``claude_code``、``codex``、``direct`` 或 ``flash``。
+   * - ``--direct-tool``
+     - ``—``
+     - ``direct`` 规划器只执行一次的工具名称。
+   * - ``--direct-tool-args``
+     - ``{}``
+     - 传给 ``--direct-tool`` 工具的 JSON 对象。
    * - ``--model``
      - ``—``
      - ``api`` 要求服务提供方前缀；SDK 规划器使用各自默认值。

@@ -135,10 +135,20 @@ def _build_argparser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--planner",
         default="api",
-        choices=["api", "claude_code", "codex", "flash"],
-        help="Planner backend: api | claude_code | codex are LLMs in the "
-        "loop; flash is evaluation-only and replays a plan from memory, re-localizing "
-        "each waypoint's anchor.",
+        choices=["api", "claude_code", "codex", "direct", "flash"],
+        help="Planner backend: api | claude_code | codex use an LLM; flash is "
+        "evaluation-only and replays a plan from memory; direct executes one "
+        "named tool without an LLM.",
+    )
+    ap.add_argument(
+        "--direct-tool",
+        default=None,
+        help="Tool for the direct planner. Robot extensions may provide a default.",
+    )
+    ap.add_argument(
+        "--direct-tool-args",
+        default="{}",
+        help="JSON object passed to --direct-tool.",
     )
     ap.add_argument(
         "--model",
@@ -377,6 +387,23 @@ def main() -> int:
     )
     args = parser.parse_args()
     args.robot_name = early.robot_name
+    if args.planner == "direct":
+        if not args.direct_tool:
+            parser.error("--planner direct requires --direct-tool")
+        if args.model is not None or args.base_url is not None:
+            parser.error("--planner direct does not use --model or --base-url")
+        if args.tui or args.dashboard or args.explore:
+            parser.error(
+                "--planner direct cannot be used with --tui, --dashboard, or --explore"
+            )
+        try:
+            args.direct_tool_args = json.loads(args.direct_tool_args)
+        except json.JSONDecodeError as exc:
+            parser.error(f"--direct-tool-args must be a JSON object: {exc}")
+        if not isinstance(args.direct_tool_args, dict):
+            parser.error("--direct-tool-args must be a JSON object")
+    elif args.direct_tool is not None or args.direct_tool_args != "{}":
+        parser.error("--direct-tool and --direct-tool-args require --planner direct")
     if "--interactive" in sys.argv or "-i" in sys.argv:
         logger.warning("--interactive is deprecated; use --tui instead")
     human_interactive_exploration = (
@@ -392,10 +419,18 @@ def main() -> int:
         )
     except ValueError as exc:
         parser.error(str(exc))
-    if robot_spec.is_real_robot and not (
-        human_interactive_exploration
-        or external_env_dashboard
-        or (args.dashboard and robot_spec.supports_human_interactive_exploration)
+    operator_confirmation = getattr(robot_spec, "requires_operator_confirmation", None)
+    needs_terminal_confirmation = (
+        operator_confirmation(args) if operator_confirmation is not None else True
+    )
+    if (
+        robot_spec.is_real_robot
+        and needs_terminal_confirmation
+        and not (
+            human_interactive_exploration
+            or external_env_dashboard
+            or (args.dashboard and robot_spec.supports_human_interactive_exploration)
+        )
     ):
         if args.dashboard or args.tui:
             option = "--dashboard" if args.dashboard else "--tui"
@@ -441,13 +476,15 @@ def main() -> int:
         parser.error("--explore cannot be used with --memory-profile hf")
     if args.explore and getattr(args, "explore_sessions", 1) <= 0:
         parser.error("--explore-sessions must be greater than 0")
-    args.memory_profile = args.memory_profile or ("local" if args.explore else "hf")
+    args.memory_profile = args.memory_profile or (
+        "local" if args.explore or args.planner == "direct" else "hf"
+    )
+    if args.planner == "direct" and args.memory_profile != "local":
+        parser.error("--planner direct requires --memory-profile local")
     if args.memory_profile == "hf" and args.memory_dir is not None:
         parser.error("--memory-dir requires --memory-profile local or --explore")
     if args.memory_repo is not None and args.memory_profile == "local":
         parser.error("--memory-repo requires HF evaluation")
-    from rpent.memory.loading import prepare_run_memory
-
     try:
         if args.memory_repo is not None:
             from rpent.memory.source import parse_repo
@@ -477,7 +514,10 @@ def main() -> int:
     output_dir = init_output_dir(output_dir, verbose=args.verbose)
     logger.info("physical agent cmd: %s", shlex.join([sys.executable, *sys.argv]))
 
-    prepare_run_memory(args, robot_spec, run_config)
+    if args.planner != "direct":
+        from rpent.memory.loading import prepare_run_memory
+
+        prepare_run_memory(args, robot_spec, run_config)
 
     dashboard_events = NullDashboardEventSink()
 
@@ -486,6 +526,8 @@ def main() -> int:
         output_dir=output_dir,
         recipe_tag=recipe_tag,
         robot_name=robot_name,
+        direct_tool_name=args.direct_tool,
+        direct_tool_args=args.direct_tool_args,
         memory_dir=prompt_vars.get("memory_dir"),
         base_url=args.base_url,
         model=args.model,

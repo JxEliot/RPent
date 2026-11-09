@@ -5,7 +5,7 @@ RPent 通过一个 CLI 参数选择 Agentic Planner 的后端：
 
 .. code-block:: text
 
-   --planner {api,claude_code,codex,flash}
+   --planner {api,claude_code,codex,direct,flash}
 
 三种在线规划器（``api``、``claude_code`` 和 ``codex``）接收相同的系统提示词和用户提示词，也使用同一套 RPent 工具定义。它们的区别在于如何将这些工具接入模型、如何组织工具调用循环，以及使用哪个模型 SDK。
 
@@ -32,6 +32,9 @@ RPent 通过一个 CLI 参数选择 Agentic Planner 的后端：
        的锚点重新定位，使方案能跟随移动过的物体。参见
        :doc:`flash`。
      - 想在新布局上低成本地重跑一个已知可行的方案，无需 LLM 在线规划；仍需要感知和 VLA 服务。
+   * - ``direct``
+     - 只执行所选机器人 toolkit 中的一个工具，然后结束；不会请求模型服务。
+     - 执行回到初始位等固定动作，或做确定性的硬件检查。
 
 .. _planner-direct-actions:
 
@@ -48,6 +51,20 @@ RPent 通过一个 CLI 参数选择 Agentic Planner 的后端：
 
 ``api`` 规划器（直接调用模型 API）
 -------------------------------------
+
+``direct`` 规划器
+------------------
+
+``--planner direct`` 会将指定工具执行一次，不会请求模型。
+通过 ``--direct-tool`` 选择工具，并用 ``--direct-tool-args`` 传入 JSON 参数
+（默认 ``{}``）。它默认使用本地 memory，也会跳过 Hugging Face memory 准备。
+机器人集成应要求显式启用真机动作；例如 Seer 双臂集成默认只预览，只有添加
+``--live`` 才会发布运动命令。参见 :doc:`../real_world_robots/seer_dual_arm`。
+
+.. code-block:: bash
+
+   rpent --robot seer_dual_arm --planner direct \
+     --direct-tool return_to_initial
 
 ``--planner api`` 是默认选项。它使用 Pydantic AI 原生工具调用循环，并要求 ``--model`` 带有模型提供商前缀。当前项目安装的依赖包含 Anthropic 和 OpenAI 集成，因此可以直接使用 Anthropic Messages API、OpenAI Responses API，以及 OpenAI 兼容的 Chat Completions API。
 

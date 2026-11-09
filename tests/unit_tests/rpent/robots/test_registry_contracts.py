@@ -37,6 +37,7 @@ EXPECTED_ROBOTS = (
     "robocasa",
     "robodojo",
     "robotwin",
+    "seer_dual_arm",
     "yam",
 )
 
@@ -112,6 +113,12 @@ PROMPT_VARIABLES = {
         "success_criteria": "object follows the chosen gripper",
         "constraints": "1. Move exactly one arm per call",
         "output_dir": Path("/output"),
+    },
+    "seer_dual_arm": {
+        "memory_dir": "/memory",
+        "rbk_config": "/robot/rbk_config.json",
+        "robokit_config": "/robot/robokit.json",
+        "live": False,
     },
 }
 
@@ -199,6 +206,8 @@ def test_dashboard_metadata_has_consistent_fields_and_runtime_components(
     robot_name: str,
 ) -> None:
     spec = get_robot_spec(robot_name)
+    if spec.resolve_dashboard is None:
+        pytest.skip(f"{robot_name} does not expose Dashboard controls")
     parser = ArgumentParser()
     spec.add_cli_args(parser, use_dashboard=True)
     dashboard = spec.resolve_dashboard(parser.parse_args([]))

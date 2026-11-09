@@ -69,6 +69,9 @@ class RobotSpec:
     #: Physical scene restoration requires operator involvement, not simulator reset.
     #: Operator input requires an exclusive terminal unless an external ENV owns it.
     is_real_robot: bool = False
+    #: Whether this invocation requires an operator terminal before robot startup.
+    #: Defaults to confirmation for all real-robot invocations.
+    requires_operator_confirmation: Callable[[argparse.Namespace], bool] | None = None
     #: Whether the robot implements the exploration-time toolkit contract.
     #: The CLI uses this instead of hard-coding robot names so real-robot
     #: extensions can opt into exploration with their own reset semantics.

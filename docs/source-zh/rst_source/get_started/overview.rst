@@ -47,10 +47,12 @@ RPent 的三条核心设计原则是服务化、标准化和可组合（service-
      - 双节点部署、操作与人工参与的探索。
    * - :doc:`YAM <../real_world_robots/yam>`
      - 已有任务演示；安装使用文档即将推出。
+   * - :doc:`Seer 双臂 <../real_world_robots/seer_dual_arm>`
+     - 使用 Seer 控制器 SDK 执行回到初始位的固定动作。
    * - :doc:`SO-101 <../real_world_robots/so101>`
      - 内容即将推出。
 
-规划器可选择 ``api``、``claude_code`` 或 ``codex``；LIBERO 还提供用于执行已有计划的 :doc:`Flash Mode <../guides/flash>`。模型服务配置见 :doc:`../guides/configure_planner`。
+在线规划可选择 ``api``、``claude_code`` 或 ``codex``；``direct`` 会在不请求模型的情况下执行一个指定的机器人工具。LIBERO 还提供用于执行已有计划的 :doc:`Flash Mode <../guides/flash>`。规划器说明见 :doc:`../guides/configure_planner`。
 
 从 :doc:`quickstart` 开始运行第一个任务。评测成绩和资源开销见 :doc:`../leaderboard/index`，研究背景见 :doc:`../resources/harnessvla`。
 

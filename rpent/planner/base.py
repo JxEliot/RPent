@@ -223,6 +223,8 @@ def build_planner(
     output_dir: str | Path,
     recipe_tag: str,
     robot_name: str,
+    direct_tool_name: str | None = None,
+    direct_tool_args: dict | None = None,
     base_url: str | None = None,
     model: str | None = None,
     memory_dir: str | Path | None = None,
@@ -237,6 +239,16 @@ def build_planner(
     """Build a planner for the given backend, resolving credentials from env vars."""
     # Imports are deferred to avoid a circular import: api_loop / claude_code /
     # codex all import from this module (PlannerResult).
+
+    if planner_type == "direct":
+        from rpent.planner.direct import DirectToolPlanner
+
+        if direct_tool_name is None:
+            raise ValueError("direct planner requires a tool name")
+        return DirectToolPlanner(
+            tool_name=direct_tool_name,
+            tool_args=direct_tool_args,
+        )
 
     if planner_type == "api":
         from rpent.planner.api_loop import ApiAgentLoop

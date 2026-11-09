@@ -62,10 +62,12 @@ Choose a Platform
      - Two-node deployment, operation, and exploration with an operator.
    * - :doc:`YAM <../real_world_robots/yam>`
      - Task demo available; installation and usage documentation is coming soon.
+   * - :doc:`Seer Dual-Arm <../real_world_robots/seer_dual_arm>`
+     - Fixed return-to-initial action using the Seer controller SDK.
    * - :doc:`SO-101 <../real_world_robots/so101>`
      - Coming soon.
 
-Choose ``api``, ``claude_code``, or ``codex`` for online planning. LIBERO also supports :doc:`Flash Mode <../guides/flash>` for executing stored plans. See :doc:`../guides/configure_planner` for model-service configuration.
+Choose ``api``, ``claude_code``, or ``codex`` for online planning. ``direct`` executes one selected robot tool without a model request. LIBERO also supports :doc:`Flash Mode <../guides/flash>` for executing stored plans. See :doc:`../guides/configure_planner` for planner details.
 
 Start with :doc:`quickstart`. See :doc:`../leaderboard/index` for reported results and resource costs, and :doc:`../resources/harnessvla` for the research background.
 

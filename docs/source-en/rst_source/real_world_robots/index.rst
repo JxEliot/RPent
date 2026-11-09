@@ -16,5 +16,7 @@ Choose a platform for installation and usage instructions.
      - Dual-arm Franka installation, calibration, and operation.
    * - :doc:`yam`
      - Installation, configuration, and operation.
+   * - :doc:`seer_dual_arm`
+     - Minimal fixed-action control for a Seer dual-arm robot.
    * - :doc:`so101`
      - Content coming soon.

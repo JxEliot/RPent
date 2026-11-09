@@ -7,7 +7,7 @@ Select the Agentic Planner backend with one CLI flag:
 
 .. code-block:: text
 
-   --planner {api,claude_code,codex,flash}
+   --planner {api,claude_code,codex,direct,flash}
 
 All three online planners receive the same rendered system and user prompts
 and use the RPent tool schemas from the same toolkit. They differ in
@@ -43,6 +43,10 @@ loop is orchestrated, and which model SDK is used.
        objects that moved. See :doc:`flash`.
      - You want to re-run a known-good plan on new layouts, without online
        LLM planning. Perception and VLA services are still required.
+   * - ``direct``
+     - Executes one named tool from the selected robot toolkit and returns.
+       It does not contact a model service.
+     - Run a fixed action such as homing or a deterministic hardware check.
 
 .. _planner-direct-actions:
 
@@ -60,6 +64,22 @@ ranges. VLA and scripted tools remain available when direct actions are enabled.
 
 The ``api`` Planner (direct Model API)
 ---------------------------------------
+
+The ``direct`` Planner
+----------------------
+
+``--planner direct`` executes one tool exactly once without a model request.
+Select the tool with ``--direct-tool`` and pass its JSON arguments with
+``--direct-tool-args`` (default ``{}``). It defaults to local memory and skips
+Hugging Face memory preparation. Robot-specific live actions should require an
+explicit opt-in; for example, the Seer dual-arm integration previews by default
+and requires ``--live`` to publish motion commands. See
+:doc:`../real_world_robots/seer_dual_arm`.
+
+.. code-block:: bash
+
+   rpent --robot seer_dual_arm --planner direct \
+     --direct-tool return_to_initial
 
 ``--planner api`` is the default. It uses the native Pydantic AI tool-calling
 runtime and requires a provider prefix in ``--model``. The
