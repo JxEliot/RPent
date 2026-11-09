@@ -87,6 +87,9 @@ response, enter another instruction or use ``/exit`` to close the conversation.
 To execute real motion after checking the preview and clearing the workspace,
 restart the same chat command with ``--live``. Starting the chat does not move
 the robot; a user action request triggers the tool.
+The SDK starts on the first live action and stays open until the conversation
+ends. Each action waits for a new measured-pose update; shared feedback readers
+are released by SDK shutdown at session close.
 
 Use ``--model openai:gpt-6-astra`` to override a different configured model.
 Responses uses ``openai:<model>``; Chat Completions uses ``openai-chat:<model>``.

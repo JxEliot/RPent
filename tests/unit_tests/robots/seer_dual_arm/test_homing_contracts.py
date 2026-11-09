@@ -147,9 +147,8 @@ def test_preview_does_not_initialize_robot_sdk(tmp_path) -> None:
     assert result["target_xyzw"][:3] == [0.63, 0.27, 1.05]
 
 
-def test_live_run_publishes_dual_arm_wbc_and_waits_for_stable_feedback(
-    tmp_path: Path, monkeypatch
-) -> None:
+@pytest.fixture
+def homing_sdk(tmp_path: Path, monkeypatch):
     config_path = tmp_path / "rbk_config.json"
     write_config(config_path, stable_cycles=2)
     robokit_config = tmp_path / "robokit.json"
@@ -186,15 +185,25 @@ def test_live_run_publishes_dual_arm_wbc_and_waits_for_stable_feedback(
         def __init__(self):
             self.sequence = 0
             self.published = []
+            self.feedback_available = True
+            self.feedback_updates = True
+            self.reader = SimpleNamespace(is_shared_latest=True, closed=False)
 
         def subscribe(self, *args):
             self.subscribed = args
+            return self.reader
+
+        def unsubscribe(self, reader):
+            raise ValueError("shared latest reader cannot be unsubscribed")
 
         def publish(self, *args):
             self.publisher = args
 
         def get(self, *args):
-            self.sequence += 1
+            if not self.feedback_available:
+                return None
+            if self.feedback_updates:
+                self.sequence += 1
             return Feedback(self.sequence)
 
         def put(self, topic, message):
@@ -210,10 +219,21 @@ def test_live_run_publishes_dual_arm_wbc_and_waits_for_stable_feedback(
 
     data_pool = DataPool()
     system_calls = []
-    system = SimpleNamespace(
-        init=lambda *args, **kwargs: system_calls.append(("init", args, kwargs)),
-        shutdown=lambda: system_calls.append(("shutdown",)),
-    )
+
+    class System:
+        shut_down = False
+
+        def init(self, *args, **kwargs):
+            if self.shut_down:
+                raise RuntimeError("Robokit has already shut down")
+            system_calls.append(("init", args, kwargs))
+
+        def shutdown(self):
+            self.shut_down = True
+            data_pool.reader.closed = True
+            system_calls.append(("shutdown",))
+
+    system = System()
     robokit = ModuleType("robokit")
     core = ModuleType("robokit.core")
     core.datapool = data_pool
@@ -236,21 +256,36 @@ def test_live_run_publishes_dual_arm_wbc_and_waits_for_stable_feedback(
     ):
         monkeypatch.setitem(sys.modules, name, module)
 
-    result = execute_return_to_initial(
-        rbk_config=config_path,
-        robokit_config=robokit_config,
-        live=True,
-        duration=0.01,
-        timeout=1.0,
-        feedback_timeout=0.1,
-        hz=1000.0,
-        node_name="test",
-        check_cancelled=lambda: None,
+    return SimpleNamespace(
+        pool=data_pool,
+        system_calls=system_calls,
+        command_type=Command,
+        runtime={
+            "rbk_config": config_path,
+            "robokit_config": robokit_config,
+            "live": True,
+            "duration": 0.01,
+            "timeout": 1.0,
+            "feedback_timeout": 0.1,
+            "hz": 1000.0,
+            "node_name": "test",
+        },
     )
 
+
+def test_live_run_publishes_dual_arm_wbc_and_waits_for_stable_feedback(
+    homing_sdk,
+) -> None:
+    result = execute_return_to_initial(
+        **homing_sdk.runtime, check_cancelled=lambda: None
+    )
+    data_pool = homing_sdk.pool
     assert result["success"] is True
     assert result["moved"] is True
-    assert data_pool.publisher == ("/RobotControl/WbcEECommand", Command)
+    assert data_pool.publisher == (
+        "/RobotControl/WbcEECommand",
+        homing_sdk.command_type,
+    )
     assert data_pool.published
     topic, command = data_pool.published[-1]
     assert topic == "/RobotControl/WbcEECommand"
@@ -258,4 +293,52 @@ def test_live_run_publishes_dual_arm_wbc_and_waits_for_stable_feedback(
     assert command.leftEEPose.x == pytest.approx(0.63)
     assert command.rightEEPose.y == pytest.approx(-0.27)
     assert command.leftEEVel.linear_x == 0.0
-    assert system_calls[-1] == ("shutdown",)
+    assert homing_sdk.system_calls[-1] == ("shutdown",)
+    assert data_pool.reader.closed
+
+
+@pytest.mark.parametrize("feedback", ["missing", "cached"])
+def test_missing_or_cached_feedback_preserves_error_and_closes_sdk(
+    homing_sdk, feedback: str
+) -> None:
+    homing_sdk.pool.feedback_available = feedback != "missing"
+    homing_sdk.pool.feedback_updates = feedback != "cached"
+    with pytest.raises(RuntimeError, match="no fresh measured EE feedback"):
+        execute_return_to_initial(**homing_sdk.runtime, check_cancelled=lambda: None)
+    assert not homing_sdk.pool.published
+    assert homing_sdk.system_calls[-1] == ("shutdown",)
+    assert homing_sdk.pool.reader.closed
+
+
+def test_toolkit_can_home_again_after_feedback_failure_and_success(
+    tmp_path: Path, homing_sdk
+) -> None:
+    from robots.seer_dual_arm.toolkit import SeerDualArmToolkit
+    from rpent.dashboard.events import NullDashboardEventSink
+    from rpent.memory import MemoryManager
+
+    toolkit = SeerDualArmToolkit(
+        runtime_kwargs=homing_sdk.runtime,
+        dashboard_events=NullDashboardEventSink(),
+        memory=MemoryManager(tmp_path / "memory"),
+        state_output_dir=tmp_path / "states",
+        interactive=True,
+    )
+    try:
+        homing_sdk.pool.feedback_available = False
+        failed = toolkit.execute_tool("return_to_initial", {})
+        assert failed.data["success"] is False
+        assert "no fresh measured EE feedback" in failed.data["error"]
+        homing_sdk.pool.feedback_available = True
+        for _ in range(2):
+            result = toolkit.execute_tool("return_to_initial", {})
+            assert result.data["success"] is True
+            assert result.data["moved"] is True
+            assert not homing_sdk.pool.reader.closed
+        assert [call[0] for call in homing_sdk.system_calls] == ["init"]
+    finally:
+        toolkit.close()
+    assert homing_sdk.pool.reader.closed
+    assert [call[0] for call in homing_sdk.system_calls] == ["init", "shutdown"]
+    toolkit.close()
+    assert [call[0] for call in homing_sdk.system_calls] == ["init", "shutdown"]

@@ -36,6 +36,34 @@ class HomingConfig:
     stable_cycles: int
 
 
+class HomingSession:
+    """Own the SDK lifecycle across actions in one robot session.
+
+    Shared latest readers belong to the SDK datapool. They are released by
+    shutdown, which is terminal for the process and must wait until chat ends.
+    """
+
+    def __init__(self, *, node_name: str, config_path: Path) -> None:
+        self._node_name = node_name
+        self._config_path = config_path
+        self._system: Any | None = None
+
+    def start(self) -> None:
+        """Initialize the SDK lazily on the first live action."""
+        if self._system is None:
+            from robokit.core import system
+
+            system.init(self._node_name, config_path=self._config_path)
+            self._system = system
+
+    def close(self) -> None:
+        """Release all SDK readers and writers once the session has drained."""
+        if self._system is not None:
+            system = self._system
+            self._system = None
+            system.shutdown()
+
+
 def _finite_positive(value: Any, name: str) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{name} must be finite and positive")
@@ -342,8 +370,12 @@ def execute_return_to_initial(
     hz: float,
     node_name: str,
     check_cancelled: Callable[[], None],
+    session: HomingSession | None = None,
 ) -> dict[str, Any]:
-    """Preview or execute the configured dual-arm homing action."""
+    """Preview or execute homing, retaining a supplied SDK session for later calls.
+
+    Without ``session``, this function owns and closes a one-shot SDK lifecycle.
+    """
     config = load_homing_config(rbk_config)
     duration = _finite_positive(duration, "duration")
     timeout = _finite_positive(timeout, "timeout")
@@ -362,7 +394,7 @@ def execute_return_to_initial(
             "grippers_changed": False,
         }
 
-    from robokit.core import datapool, system
+    from robokit.core import datapool
     from robokit.protocol.messageV4_stampedtransform_pb2 import (
         MessageV4_StampedTransforms,
     )
@@ -370,8 +402,11 @@ def execute_return_to_initial(
 
     action_topic = "/RobotControl/WbcEECommand"
     feedback_topic = "/RobotControl/WbcDebugTF"
-    system.init(node_name, config_path=Path(robokit_config))
-    feedback_reader: Any | None = None
+    owns_session = session is None
+    session = session or HomingSession(
+        node_name=node_name, config_path=Path(robokit_config)
+    )
+    session.start()
     motion_started = False
     completed = False
     sequence = 0
@@ -384,7 +419,11 @@ def execute_return_to_initial(
         message = datapool.get(feedback_topic, MessageV4_StampedTransforms)
         if message is not None:
             signature = _message_signature(message)
-            if signature != previous_signature:
+            if previous_signature is None:
+                # A retained SDK reader may hold the preceding action's sample.
+                # Require a subsequent update before accepting a starting pose.
+                previous_signature = signature
+            elif signature != previous_signature:
                 previous_signature = signature
                 pose = _read_measured_poses(message)
                 if pose is not None:
@@ -395,9 +434,7 @@ def execute_return_to_initial(
         return latest
 
     try:
-        feedback_reader = datapool.subscribe(
-            feedback_topic, MessageV4_StampedTransforms
-        )
+        datapool.subscribe(feedback_topic, MessageV4_StampedTransforms)
         datapool.publish(action_topic, WBCCommand)
         logger.info("waiting for measured left/right EE feedback on %s", feedback_topic)
         deadline = time.monotonic() + feedback_timeout
@@ -458,15 +495,12 @@ def execute_return_to_initial(
             time.sleep(1.0 / hz)
     finally:
         try:
-            if feedback_reader is not None and motion_started and not completed:
+            if motion_started and not completed:
                 current = current_pose()
                 if current is not None:
                     _send_pose(datapool, WBCCommand, action_topic, current, sequence)
                     time.sleep(0.1)
                     logger.warning("homing stopped; sent a hold at the current EE pose")
         finally:
-            if feedback_reader is not None:
-                unsubscribe = getattr(datapool, "unsubscribe", None)
-                if callable(unsubscribe):
-                    unsubscribe(feedback_reader)
-            system.shutdown()
+            if owns_session:
+                session.close()

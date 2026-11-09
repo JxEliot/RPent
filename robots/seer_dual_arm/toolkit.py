@@ -59,6 +59,11 @@ class SeerDualArmToolkit(Toolkit):
         )
         self.add_tools(iter_tools(self._primitives))
 
+    def close(self) -> None:
+        """Drain robot actions before releasing the SDK-owned shared readers."""
+        super().close()
+        self._primitives.close()
+
     def get_env_state(
         self,
         *,
