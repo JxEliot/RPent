@@ -55,11 +55,11 @@ def system_prompt(variables: Mapping[str, object] | None = None) -> PromptNode:
             "It cannot move the robot. Report this as a preview, never as actual motion. "
             "Real motion requires the operator to restart with --live."
         ),
-        "RESULT": "Report the tool result faithfully. Claim arrival only when the tool "
-        "arm tool reports success=true and moved=true, or a gripper tool reports "
-        "success=true and target_observed=true. Gripper results are observations, "
-        "not request-correlated acknowledgements; report uncertainty on timeout or partial "
-        "commands. On error, explain it and wait for the "
+        "RESULT": "Report the tool result faithfully. Claim arm arrival only when the "
+        "arm tool reports success=true and moved=true. Gripper action success means only "
+        "that topic commands were published; never claim the service received them or that "
+        "the grippers moved, reached the target, or grasped an object. Report partial "
+        "commands and uncertainty on error. On error, explain it and wait for the "
         "operator; do not retry motion automatically. Never run shell commands or "
         "modify configuration to perform robot actions or change the execution mode.",
         "SESSION": (

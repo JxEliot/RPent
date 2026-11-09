@@ -10,7 +10,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from robots.seer_dual_arm.gripper import _observe, execute_gripper, load_gripper_config
+from robots.seer_dual_arm.gripper import execute_gripper
 
 
 @pytest.fixture
@@ -22,7 +22,6 @@ def config(tmp_path):
                 "teleop": {
                     "gripper": {
                         "status_timeout_s": 0.03,
-                        "action_timeout_s": 0.03,
                     }
                 }
             }
@@ -150,7 +149,7 @@ def run(config, *, action="open", arm="both", live=True, position=None):
 @pytest.mark.parametrize("action", ["open", "close", "set", "state"])
 def test_preview_never_connects(config, action):
     result = run(config, action=action, live=False, position=50)
-    assert result["success"] and not result["target_observed"]
+    assert result["success"] and not result["command_published_sides"]
     assert not result["command_attempted_sides"]
 
 
@@ -168,9 +167,19 @@ def test_invalid_position_rejected_before_transport(config, position):
         ("set", "both", 37, ["/GripCmd/Gripper-000", "/GripCmd/Gripper-001"]),
     ],
 )
-def test_commands_and_fresh_feedback(config, transport, action, arm, target, topics):
+def test_commands_without_status(
+    config, transport, action, arm, target, topics, monkeypatch
+):
+    def unexpected_status(*args):
+        raise AssertionError("gripper commands must not read status")
+
+    monkeypatch.setattr(transport, "subscribe", unexpected_status)
+    monkeypatch.setattr(transport, "get", unexpected_status)
     result = run(config, action=action, arm=arm, position=target)
-    assert result["success"] and result["target_observed"]
+    assert result["success"] and "not checked" in result["summary"]
+    assert result["command_published_sides"] == (
+        ["left", "right"] if arm == "both" else [arm]
+    )
     assert [topic for topic, _ in transport.calls] == topics
     for _, message in transport.calls:
         assert message.GripFinger.type == 1
@@ -190,18 +199,11 @@ def test_state_does_not_send_a_command(config, transport):
     assert not transport.calls
 
 
-def test_stopped_service_does_not_send_a_command(config, transport):
+def test_stopped_service_prevents_state_read(config, transport):
     transport.heartbeat = False
-    result = run(config)
+    result = run(config, action="state")
     assert not result["success"] and "status" in result["error"]
     assert not transport.calls
-
-
-def test_old_feedback_does_not_prove_completion(config, transport):
-    transport.new_feedback = False
-    result = run(config, arm="left")
-    assert not result["success"] and not result["target_observed"]
-    assert "unknown" in result["error"] and len(transport.calls) == 1
 
 
 def test_partial_send_reports_uncertainty(config, transport):
@@ -209,52 +211,5 @@ def test_partial_send_reports_uncertainty(config, transport):
     result = run(config)
     assert not result["success"] and result["grippers_changed"]
     assert result["command_attempted_sides"] == ["left", "right"]
+    assert result["command_published_sides"] == ["left"]
     assert "transport failed" in result["error"]
-
-
-def test_service_error_prevents_send(config, transport):
-    transport.error = {"left": "serial error"}
-    result = run(config)
-    assert not result["success"] and "serial error" in result["error"]
-    assert not transport.calls
-
-
-@pytest.mark.parametrize(
-    ("overrides", "expected"),
-    [
-        ({"timestamp_ns": 1}, "waiting for feedback after command"),
-        ({"feedback_fresh": False}, "waiting for fresh measured feedback"),
-        ({"fault_code": 1}, "hardware fault:"),
-        ({"fault_code": None}, "waiting for fault status"),
-        ({"state_code": 2}, "gripper stalled"),
-        ({"state_code": 3}, "gripper reports object dropped"),
-        ({"measured_position": 50}, "waiting for target position"),
-    ],
-)
-def test_feedback_cannot_falsely_confirm_target(config, overrides, expected):
-    now = time.time_ns()
-    feedback = {
-        "feedback_fresh": True,
-        "feedback_sequence": 3,
-        "timestamp_ns": now,
-        "fault_code": 0,
-        "state_code": 0,
-        "measured_position": 100,
-    }
-    feedback.update(overrides)
-    status = {
-        "errors": {},
-        "feedback": {"left": feedback},
-        "applied": {
-            "left": {
-                "position": 100,
-                "velocity": 100,
-                "acceleration": 100,
-                "deceleration": 100,
-                "force": 100,
-            }
-        },
-    }
-    assert _observe(
-        status, "left", 100, load_gripper_config(config), 2, now
-    ).startswith(expected)

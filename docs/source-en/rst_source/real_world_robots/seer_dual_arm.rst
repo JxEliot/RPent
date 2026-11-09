@@ -95,7 +95,7 @@ To execute real motion after checking the preview and clearing the workspace,
 restart the same chat command with ``--live``. Starting the chat does not move
 the robot; a user action request triggers the tool.
 The SDK starts on the first live action and stays open until the conversation
-ends. Each action waits for a new measured-pose update; shared feedback readers
+ends. Arm actions wait for a new measured-pose update; shared feedback readers
 are released by SDK shutdown at session close.
 
 Use ``--model openai:gpt-6-astra`` to override a different configured model.
@@ -228,13 +228,13 @@ state or send commands. Positions range from 0 (closed) to 100 (open); command
 parameters and timeouts are configured under ``teleop.gripper``.
 
 Commands use ``/GripCmd/Gripper-000`` and ``/GripCmd/Gripper-001``; commands
-for both sides are separate and not guaranteed to be simultaneous. Before
-publishing, RPent requires consecutive fresh ``/GripperService/Status``
-heartbeats. Afterwards it waits for a matching applied command and new measured
-feedback. Status has no request ID, so observing the target does not establish
-which command caused it or prove a successful grasp. A timeout or partial
-publish leaves the outcome unknown; check both sides and avoid other publishers.
-The service may deduplicate repeated commands; without new feedback they time out.
+for both sides are separate and not guaranteed to be simultaneous. Gripper
+actions return after publishing without reading status or checking arrival.
+Success means the SDK calls completed; it does not establish service receipt
+or physical motion. On partial publication, check both sides; commands are not
+retried automatically. Avoid other publishers. The separate status query uses
+``/GripperService/Status`` and requires compatible messages and continuing
+heartbeats; feedback reliability must be verified separately.
 
 This integration does not run a VLA. Gripper behavior still needs verification
 with the connected controller and independent service.
