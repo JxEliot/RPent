@@ -81,7 +81,7 @@ def _add_cli_args(parser: argparse.ArgumentParser, use_dashboard: bool) -> None:
         "--rbk-config",
         dest="rbk_config",
         default=None,
-        help="Homing JSON (default: robots/seer_dual_arm/config/robot.json).",
+        help="Robot motion JSON (default: robots/seer_dual_arm/config/robot.json).",
     )
     parser.add_argument(
         "--robokit-config",

@@ -4,7 +4,7 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| `robot.json` | `teleop.homing.initial_poses.left/right` 为两个机械臂的初始末端位姿；同时配置到位阈值。 |
+| `robot.json` | `teleop.homing` 配置初始末端位姿和归位阈值；`teleop.cartesian` 配置末端增量上限及到位阈值。 |
 | `robokit.json` | SDK 的 DDS 地址、domain 和 namespace，真机模式使用。 |
 | `api.toml` | API planner 默认读取的模型、地址和认证信息；仅保存在本机。 |
 | `api.example.toml` | 不含凭据的 API 配置模板，可提交到 Git。 |
@@ -12,6 +12,31 @@
 `pos` 是 `base_link` 坐标系下的 `[x, y, z]`，单位米；`quat` 是 `[x, y, z, w]` 四元数。
 当前数值来自本机 SeerTeleoperationService 的归位配置。修改初始位时，先运行预览，确认后再用 `--live`。
 归位只控制两个机械臂末端，两个夹爪保持原状。
+
+末端工具与 `dual_franka` 使用相同的 `move_delta`、`rotate_delta` 名称，坐标系为 Seer 的 `base_link`：
+
+- `move_delta(arm, delta_xyz)`：`arm` 为 `left`、`right` 或 `both`，增量 `[dx, dy, dz]` 单位米。`both` 用一条轨迹同步移动双臂，保持各自姿态。
+- `rotate_delta(arm, delta_rpy)`：单臂 `left` 或 `right`，外禀 XYZ 欧拉角增量单位弧度；`q_target = q_delta * q_current`，保持位置。
+
+单臂动作会将另一臂保持在动作开始时的实测位姿；两个夹爪均保持原状。
+`teleop.cartesian` 的默认值如下，旧配置缺少此节时也使用这些默认值：
+
+```json
+"cartesian": {
+  "max_translation_m": 0.10,
+  "max_rotation_rad": 0.5,
+  "position_threshold_m": 0.005,
+  "rotation_threshold_deg": 1.0,
+  "stable_cycles": 3
+}
+```
+
+上限按单次增量向量的欧氏范数检查，超限会报错；这些上限不代表工作空间或碰撞检查。
+到位需左右臂连续满足阈值的不同反馈样本达到 `stable_cycles` 次。
+预览只报告请求的增量，不连接硬件，也不生成实测起点或绝对目标。
+例如输入“以 base_link 的 +Z 为上，双臂同时向上移动 10 厘米”，对应
+`move_delta("both", [0, 0, 0.10])`；“右臂绕 base_link 的 Z 轴正向旋转 0.1 弧度”对应
+`rotate_delta("right", [0, 0, 0.1])`。
 
 首次配置 API 时复制模板并填写中转站信息：
 

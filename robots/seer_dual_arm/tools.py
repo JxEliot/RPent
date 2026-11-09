@@ -6,13 +6,16 @@
 #
 #     https://www.apache.org/licenses/LICENSE-2.0
 
-"""Fixed robot actions for the Seer dual-arm setup."""
+"""Homing and Cartesian tools for the Seer dual-arm setup."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Annotated, Any, Callable, Literal
 
+from pydantic import BeforeValidator, Field
+
+from robots.seer_dual_arm.cartesian import coerce_arm, execute_cartesian_delta
 from robots.seer_dual_arm.homing import HomingSession, execute_return_to_initial
 from rpent.tools import ToolResult, tool
 from rpent.utils.logging import get_logger
@@ -21,7 +24,7 @@ logger = get_logger("seer_dual_arm")
 
 
 class SeerDualArmPrimitives:
-    """One fixed homing action, with the SDK loaded only for live execution."""
+    """EE actions with one lazily initialized SDK session."""
 
     def __init__(self, *, runtime: dict[str, Any], check_cancelled: Callable[[], None]):
         self._runtime = runtime
@@ -33,20 +36,17 @@ class SeerDualArmPrimitives:
         if self._session is not None:
             self._session.close()
 
-    @tool
-    def return_to_initial(self) -> ToolResult:
-        """Move both arm end effectors to teleop.homing.initial_poses.
-
-        Preview mode reports the target without connecting to the robot. Live
-        mode publishes WBC end-effector commands and leaves both grippers alone.
-        """
+    def _execute(
+        self, operation: Callable[..., dict[str, Any]], **kwargs
+    ) -> ToolResult:
         try:
             if self._runtime["live"] and self._session is None:
                 self._session = HomingSession(
                     node_name=str(self._runtime["node_name"]),
                     config_path=Path(self._runtime["robokit_config"]),
                 )
-            result = execute_return_to_initial(
+            result = operation(
+                **kwargs,
                 rbk_config=Path(self._runtime["rbk_config"]),
                 robokit_config=Path(self._runtime["robokit_config"]),
                 live=bool(self._runtime["live"]),
@@ -60,13 +60,56 @@ class SeerDualArmPrimitives:
             )
             if not result["moved"]:
                 logger.info(
-                    "homing preview target in %s, xyz+xyzw: %s",
-                    result["target_frame"],
-                    result["target_xyzw"],
+                    "EE motion preview: %s",
+                    result,
                 )
             return ToolResult(data=result)
         except Exception as exc:
-            logger.exception("Seer dual-arm homing failed")
+            logger.exception("Seer dual-arm action failed")
             return ToolResult(
                 data={"success": False, "error": f"{type(exc).__name__}: {exc}"}
             )
+
+    @tool
+    def return_to_initial(self) -> ToolResult:
+        """Move both arm end effectors to teleop.homing.initial_poses.
+
+        Preview reports the target without connecting to the robot. Live mode
+        publishes WBC end-effector commands. Both grippers remain unchanged.
+        """
+        return self._execute(execute_return_to_initial)
+
+    @tool
+    def move_delta(
+        self,
+        arm: Annotated[Literal["left", "right", "both"], BeforeValidator(coerce_arm)],
+        delta_xyz: Annotated[list[float], Field(min_length=3, max_length=3)],
+    ) -> ToolResult:
+        """Translate selected EEs by [dx, dy, dz] metres in base_link.
+
+        arm='both' moves both arms by the same delta in one synchronized WBC
+        trajectory. Preserves each orientation; a single-arm move holds the
+        other arm at its measured start. Both grippers stay unchanged.
+        The vector norm must fit teleop.cartesian.max_translation_m
+        (default 0.10 m). Preview reports the increment without reading hardware.
+        """
+        return self._execute(
+            execute_cartesian_delta, action="move_delta", arm=arm, delta=delta_xyz
+        )
+
+    @tool
+    def rotate_delta(
+        self,
+        arm: Annotated[Literal["left", "right"], BeforeValidator(coerce_arm)],
+        delta_rpy: Annotated[list[float], Field(min_length=3, max_length=3)],
+    ) -> ToolResult:
+        """Rotate one end effector by extrinsic [roll, pitch, yaw] radians in base_link.
+
+        Applies q_delta * q_current, holding its position and the other arm's
+        measured start pose. The RPY vector norm must fit
+        teleop.cartesian.max_rotation_rad (default 0.5 rad). Both grippers stay
+        unchanged. Preview reports the increment without reading hardware.
+        """
+        return self._execute(
+            execute_cartesian_delta, action="rotate_delta", arm=arm, delta=delta_rpy
+        )

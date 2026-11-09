@@ -16,8 +16,29 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 
 @pytest.mark.parametrize("live", [False, True])
-def test_api_chat_waits_for_input_executes_homing_and_keeps_conversation(
-    tmp_path: Path, monkeypatch, live: bool
+@pytest.mark.parametrize(
+    ("tool_name", "tool_args", "instruction"),
+    [
+        ("return_to_initial", {}, "回到初始位置"),
+        (
+            "move_delta",
+            {"arm": "both", "delta_xyz": [0, 0, 0.10]},
+            "双臂同时向上移动 10 厘米",
+        ),
+        (
+            "move_delta",
+            {"arm": "left", "delta_xyz": [0, 0, 0.02]},
+            "左臂沿 base_link 的 Z 轴正方向移动 2 厘米",
+        ),
+        (
+            "rotate_delta",
+            {"arm": "right", "delta_rpy": [0, 0, 0.1]},
+            "右臂绕 base_link 的 Z 轴正向旋转 0.1 弧度",
+        ),
+    ],
+)
+def test_api_chat_waits_for_input_executes_motion_and_keeps_conversation(
+    tmp_path: Path, monkeypatch, live: bool, tool_name, tool_args, instruction
 ) -> None:
     import pydantic_ai._cli as native_cli
 
@@ -52,7 +73,7 @@ def test_api_chat_waits_for_input_executes_homing_and_keeps_conversation(
     init_output_dir(output)
     requests = []
     actions = []
-    inputs = iter(["回到初始位置", "刚刚做了什么？", "/exit"])
+    inputs = iter([instruction, "刚刚做了什么？", "/exit"])
 
     async def read_prompt(*args, **kwargs):
         if not actions:
@@ -62,15 +83,21 @@ def test_api_chat_waits_for_input_executes_homing_and_keeps_conversation(
     async def stream(messages, info):
         requests.append(copy.deepcopy(messages))
         if len(requests) == 1:
-            yield {0: DeltaToolCall(name="return_to_initial", json_args="{}")}
+            yield {0: DeltaToolCall(name=tool_name, json_args=json.dumps(tool_args))}
         else:
-            yield "回初始位动作已完成。" if live else "预览完成，机器人未移动。"
+            yield "动作已完成。" if live else "预览完成，机器人未移动。"
 
     def execute(**kwargs):
         actions.append(kwargs)
         assert kwargs["live"] is live
         assert kwargs["rbk_config"] == config
         assert kwargs["robokit_config"] == dds
+        if tool_name != "return_to_initial":
+            assert kwargs["action"] == tool_name
+            assert kwargs["arm"] == tool_args["arm"]
+            assert kwargs["delta"] == tool_args.get(
+                "delta_xyz", tool_args.get("delta_rpy")
+            )
         return {"success": True, "moved": live, "grippers_changed": False}
 
     def build_model(model, base_url, *, api_config):
@@ -92,6 +119,7 @@ def test_api_chat_waits_for_input_executes_homing_and_keeps_conversation(
         build_model,
     )
     monkeypatch.setattr("robots.seer_dual_arm.tools.execute_return_to_initial", execute)
+    monkeypatch.setattr("robots.seer_dual_arm.tools.execute_cartesian_delta", execute)
     monkeypatch.setattr(
         "rpent.memory.MemoryManager.sync",
         lambda *a, **kw: pytest.fail("local chat must not sync memory"),
@@ -121,7 +149,7 @@ def test_api_chat_waits_for_input_executes_homing_and_keeps_conversation(
     assert transcript["finish"] is None
     assert transcript["error"] is None
     assert [m["content"] for m in transcript["messages"] if m["role"] == "user"] == [
-        "回到初始位置",
+        instruction,
         "刚刚做了什么？",
     ]
     steps = json.loads((output / "states.json").read_text())["steps"]
@@ -159,6 +187,8 @@ def test_claude_chat_exposes_homing_without_builtin_or_file_tools(
     assert options.tools == []
     assert set(options.allowed_tools) == {
         "mcp__rpent__return_to_initial",
+        "mcp__rpent__move_delta",
+        "mcp__rpent__rotate_delta",
         "mcp__rpent__finish",
     }
     toolkit.close()

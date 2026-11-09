@@ -1,11 +1,11 @@
 Seer 双臂机器人
 ================
 
-此集成提供一个固定动作：将两个机械臂末端返回到 Seer
+此集成支持末端增量控制，以及将两个机械臂末端返回到 Seer
 ``robots/seer_dual_arm/config/robot.json`` 中 ``teleop.homing.initial_poses`` 配置的位置。它使用机器人自带的
 ``seer-robokit-py`` 包，以及 ``SeerTeleoperationService/return_to_initial.sh``
 所使用的 WBC 命令和末端位姿反馈 topic。动作在仓库内的
-``robots/seer_dual_arm/homing.py`` 中实现，直接调用 Python SDK，
+``robots/seer_dual_arm/homing.py`` 和 ``cartesian.py`` 中实现，直接调用 Python SDK，
 不会执行外部 shell 脚本或导入原服务；配置直接存放在此集成目录内。
 两个夹爪保持原状，无需启动 VLA、相机或遥操作服务。
 
@@ -36,7 +36,7 @@ Seer 双臂机器人
    * - 文件
      - 用途
    * - ``robot.json``
-     - ``teleop.homing`` 下的左右臂初始末端位姿及到位阈值。
+     - ``teleop.homing`` 配置初始末端位姿和归位阈值；``teleop.cartesian`` 配置增量上限和到位阈值。
    * - ``robokit.json``
      - 真机模式所用的 SDK DDS 地址、domain 和 namespace。
    * - ``api.toml``
@@ -106,8 +106,51 @@ Responses 接口对应 ``openai:<model>``，Chat Completions 对应 ``openai-cha
      --model sonnet --tui
 
 在空白的 ``you>`` 提示符后输入“回到初始位置”。启动时添加 ``--live`` 可启用真机动作。
-此集成只向 Claude 提供回初始位和结束会话工具，默认关闭内置 shell 与文件工具。
-使用 ``/quit`` 退出。Claude、API 和 direct planner 共用同一套内部回初始位实现。
+此集成只向 Claude 提供末端运动和结束会话工具，默认关闭内置 shell 与文件工具。
+使用 ``/quit`` 退出。Claude、API 和 direct planner 共用同一套内部运动实现。
+
+末端增量控制
+------------
+
+接口名称参考 ``dual_franka``，坐标系使用 Seer 共同的 ``base_link``：
+
+* ``move_delta(arm, delta_xyz)``：按 ``[dx, dy, dz]`` 平移，单位米，保持姿态。
+  ``arm`` 可选 ``left``、``right`` 或 ``both``。``both`` 使用一条 WBC 轨迹，
+  让双臂按相同进度移动同样的增量；只有双臂实测都到位才报告成功。
+* ``rotate_delta(arm, delta_rpy)``：选择 ``left`` 或 ``right``，绕 ``base_link``
+  坐标轴旋转，保持位置。增量为外禀 XYZ 欧拉角，单位弧度：
+  ``q_target = q_delta * q_current``。
+
+单臂动作会将另一臂保持在动作开始时的实测位姿。所有动作保持夹爪原状，复用已有 SDK 会话。
+真机增量的起点来自新收到的实测反馈，与配置的初始位无关。
+预览只报告请求的增量，不生成实测起点或绝对目标。
+
+在对话中，以 ``base_link`` 的 +Z 为“向上”，输入“双臂同时向上移动 10 厘米”，
+模型会调用一次 ``move_delta("both", [0, 0, 0.10])``。
+旋转示例：“右臂绕 base_link 的 Z 轴正向旋转 0.1 弧度”。也可直接预览：
+
+.. code-block:: bash
+
+   uv run --no-sync rpent \
+     --robot seer_dual_arm --planner direct \
+     --direct-tool move_delta \
+     --direct-tool-args '{"arm":"both","delta_xyz":[0,0,0.10]}'
+
+``robot.json`` 中可选的 ``teleop.cartesian`` 使用以下默认值；旧配置缺少此节时也使用这些值：
+
+.. code-block:: json
+
+   {
+     "max_translation_m": 0.10,
+     "max_rotation_rad": 0.5,
+     "position_threshold_m": 0.005,
+     "rotation_threshold_deg": 1.0,
+     "stable_cycles": 3
+   }
+
+每次增量向量的欧氏范数必须在配置上限内，超限会报错。这些上限不提供工作空间或碰撞检查。
+到位需左右臂连续满足末端控制阈值的不同反馈样本达到 ``stable_cycles`` 次。
+轨迹复用归位的 ``--duration``、``--timeout``、``--feedback-timeout``、``--hz`` 参数。
 
 预览
 ----
@@ -145,4 +188,4 @@ Responses 接口对应 ``openai:<model>``，Chat Completions 对应 ``openai-cha
 30 秒、等待反馈 5 秒、命令频率 20 Hz；可通过 ``--duration``、``--timeout``、
 ``--feedback-timeout`` 和 ``--hz`` 调整。动作中断时，如果仍能读到新鲜反馈，会发布当前位置作为保持目标。
 
-此第一步只控制两个机械臂末端，不会控制夹爪，也不会运行 VLA。正式操作前仍需在已连接的 Seer 控制器上验证实际动作。
+此集成只控制机械臂末端，不会控制夹爪，也不会运行 VLA。正式操作前仍需在已连接的 Seer 控制器上验证实际动作。

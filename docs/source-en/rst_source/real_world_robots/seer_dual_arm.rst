@@ -1,12 +1,12 @@
 Seer Dual-Arm Robot
 ===================
 
-This integration provides one fixed action: return both end effectors to the
+This integration supports Cartesian end-effector increments and returning both end effectors to the
 poses configured in ``teleop.homing.initial_poses`` in the Seer
 ``robots/seer_dual_arm/config/robot.json``. It uses the robot's ``seer-robokit-py`` package and the
 WBC command and measured-pose topics used by
-``SeerTeleoperationService/return_to_initial.sh``. The action is implemented
-inside ``robots/seer_dual_arm/homing.py``; it calls the Python SDK directly,
+``SeerTeleoperationService/return_to_initial.sh``. Motion is implemented
+inside ``robots/seer_dual_arm/homing.py`` and ``cartesian.py``; it calls the Python SDK directly,
 without executing the shell script or importing the external service. The
 configuration lives inside this integration. Both grippers are
 left unchanged. No VLA, camera, or teleoperation service is needed.
@@ -40,7 +40,7 @@ Edit files under ``robots/seer_dual_arm/config/``:
    * - File
      - Purpose
    * - ``robot.json``
-     - Left/right initial poses and arrival thresholds under ``teleop.homing``.
+     - Initial poses and homing thresholds under ``teleop.homing``; increment limits and arrival thresholds under ``teleop.cartesian``.
    * - ``robokit.json``
      - SDK DDS address, domain, and namespace for live mode.
    * - ``api.toml``
@@ -118,10 +118,60 @@ relay) as described in :doc:`../guides/configure_planner`, then run:
      --model sonnet --tui
 
 Enter ``回到初始位置`` at the blank ``you>`` prompt. Add ``--live`` at launch
-for real motion. Claude receives only the homing and conversation-completion
+for real motion. Claude receives only the EE motion and conversation-completion
 tools for this integration; built-in shell and file tools are disabled by
-default. Use ``/quit`` to exit. It uses the same internal homing implementation
+default. Use ``/quit`` to exit. It uses the same internal motion implementation
 as the API and direct planners.
+
+End-effector increments
+-----------------------
+
+The tool names follow ``dual_franka``, using Seer's common ``base_link`` frame:
+
+* ``move_delta(arm, delta_xyz)`` translates by ``[dx, dy, dz]`` metres and
+  preserves orientation. Select ``left``, ``right``, or ``both``. With ``both``,
+  a single WBC trajectory moves both arms by the same delta with shared
+  interpolation progress; success requires measured arrival of both arms.
+* ``rotate_delta(arm, delta_rpy)`` rotates ``left`` or ``right`` about
+  ``base_link`` axes, holding its position. The increment is extrinsic XYZ
+  Euler radians: ``q_target = q_delta * q_current``.
+
+Single-arm actions hold the other arm at its measured start pose. All motions
+leave grippers unchanged and share the existing SDK session. Live increments
+are relative to fresh measured feedback, not the configured initial poses.
+Preview reports only the requested increment, without a measured start or an
+absolute target.
+
+In chat, ask ``双臂同时向上移动 10 厘米`` with up defined as ``base_link`` +Z.
+This calls ``move_delta("both", [0, 0, 0.10])`` once. A rotation example is
+``右臂绕 base_link 的 Z 轴正向旋转 0.1 弧度``. A direct preview is:
+
+.. code-block:: bash
+
+   uv run --no-sync rpent \
+     --robot seer_dual_arm --planner direct \
+     --direct-tool move_delta \
+     --direct-tool-args '{"arm":"both","delta_xyz":[0,0,0.10]}'
+
+The optional ``teleop.cartesian`` object in ``robot.json`` has these defaults,
+also used when an older configuration omits this object:
+
+.. code-block:: json
+
+   {
+     "max_translation_m": 0.10,
+     "max_rotation_rad": 0.5,
+     "position_threshold_m": 0.005,
+     "rotation_threshold_deg": 1.0,
+     "stable_cycles": 3
+   }
+
+Each increment's Euclidean vector norm must fit its configured limit; requests
+over the limit are rejected. These limits do not implement workspace or
+collision checking. Arrival requires both arms to satisfy the Cartesian
+thresholds for ``stable_cycles`` distinct feedback updates. The trajectory
+uses the same ``--duration``, ``--timeout``, ``--feedback-timeout``, and ``--hz``
+settings as homing.
 
 Preview
 -------
@@ -166,6 +216,6 @@ override them with ``--duration``, ``--timeout``, ``--feedback-timeout``, and
 ``--hz``. If motion is interrupted while fresh feedback remains available, the
 runner publishes a hold at the measured current pose.
 
-This first step controls both arm end effectors only. It does not command either
+This integration controls arm end effectors only. It does not command either
 gripper, and it does not run a VLA. Hardware behavior still needs to be
 verified on the connected Seer controller before operational use.

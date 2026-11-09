@@ -6,7 +6,7 @@
 #
 #     https://www.apache.org/licenses/LICENSE-2.0
 
-"""RPent toolkit for the minimal Seer fixed-action test."""
+"""RPent toolkit for Seer homing and Cartesian EE motion."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 class SeerDualArmToolkit(Toolkit):
-    """Homing and session completion tools for the Seer robot."""
+    """EE motion and session completion tools for the Seer robot."""
 
     def _register_common_tools(self) -> None:
         # Fixed actions need session completion, without model-owned file edits.
@@ -36,7 +36,7 @@ class SeerDualArmToolkit(Toolkit):
             finish = replace(
                 finish,
                 description="End the conversation only when the user explicitly asks "
-                "to exit. After each homing action, report its result and wait for "
+                "to exit. After each robot action, report its result and wait for "
                 "another message instead of calling finish.",
             )
         self.add_tool(finish)

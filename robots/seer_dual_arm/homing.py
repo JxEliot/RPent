@@ -6,7 +6,7 @@
 #
 #     https://www.apache.org/licenses/LICENSE-2.0
 
-"""Seer dual-arm homing using only the standard library and lazy SDK imports."""
+"""Seer WBC pose execution using the standard library and lazy SDK imports."""
 
 from __future__ import annotations
 
@@ -27,13 +27,19 @@ DualPose = tuple[float, ...]
 
 
 @dataclass(frozen=True)
-class HomingConfig:
-    """Validated homing target and arrival thresholds."""
+class MotionConfig:
+    """Arrival thresholds for a measured dual-arm pose motion."""
 
-    target: DualPose
     position_threshold_m: float
     rotation_threshold_deg: float
     stable_cycles: int
+
+
+@dataclass(frozen=True)
+class HomingConfig(MotionConfig):
+    """Validated homing target and arrival thresholds."""
+
+    target: DualPose
 
 
 class HomingSession:
@@ -235,6 +241,8 @@ def _read_measured_poses(message: Any) -> DualPose | None:
                 name="feedback quaternion",
             ),
         )
+        if not all(math.isfinite(value) for value in pose):
+            raise ValueError("measured EE pose must contain finite values")
         edges.append((parent, child, pose))
         leaf = child.strip("/").split("/")[-1].lower()
         if leaf.endswith("_ee_link"):
@@ -377,20 +385,59 @@ def execute_return_to_initial(
     Without ``session``, this function owns and closes a one-shot SDK lifecycle.
     """
     config = load_homing_config(rbk_config)
+    result = execute_pose_motion(
+        config=config,
+        target=config.target,
+        action="homing",
+        robokit_config=robokit_config,
+        live=live,
+        duration=duration,
+        timeout=timeout,
+        feedback_timeout=feedback_timeout,
+        hz=hz,
+        node_name=node_name,
+        check_cancelled=check_cancelled,
+        session=session,
+    )
+    if result["moved"]:
+        result["summary"] = "Both arms reached the configured initial poses."
+    return result
+
+
+def execute_pose_motion(
+    *,
+    config: MotionConfig,
+    target: DualPose | Callable[[DualPose], DualPose],
+    action: str,
+    robokit_config: Path | str,
+    live: bool,
+    duration: float,
+    timeout: float,
+    feedback_timeout: float,
+    hz: float,
+    node_name: str,
+    check_cancelled: Callable[[], None],
+    session: HomingSession | None = None,
+) -> dict[str, Any]:
+    """Run a WBC trajectory, resolving relative targets from fresh feedback.
+
+    A callable target is never evaluated in preview mode. Both EE poses are
+    commanded together; callers preserve the unselected arm in their target.
+    """
+    check_cancelled()
     duration = _finite_positive(duration, "duration")
     timeout = _finite_positive(timeout, "timeout")
     feedback_timeout = _finite_positive(feedback_timeout, "feedback_timeout")
     hz = _finite_positive(hz, "hz")
     if timeout <= duration:
         raise ValueError("timeout must exceed duration")
-    target = list(config.target)
     if not live:
         return {
             "success": True,
             "moved": False,
             "summary": "Preview only; the robot was not moved.",
             "target_frame": "base_link",
-            "target_xyzw": target,
+            **({"target_xyzw": list(target)} if not callable(target) else {}),
             "grippers_changed": False,
         }
 
@@ -446,33 +493,41 @@ def execute_return_to_initial(
                 break
             time.sleep(0.02)
         if start is None:
-            raise RuntimeError("no fresh measured EE feedback; homing not started")
+            raise RuntimeError(f"no fresh measured EE feedback; {action} not started")
+
+        target_pose = target(start) if callable(target) else target
 
         started = time.monotonic()
         stable = 0
+        counted_at = latest_at
         next_log = started
         while True:
             check_cancelled()
             current = current_pose()
             if current is None:
-                raise RuntimeError("EE feedback stale; homing stopped")
+                raise RuntimeError(f"EE feedback stale; {action} stopped")
             elapsed = time.monotonic() - started
             if elapsed > timeout:
-                raise RuntimeError("homing timed out")
-            command = interpolate_poses(start, config.target, elapsed / duration)
+                raise RuntimeError(f"{action} timed out")
+            command = interpolate_poses(start, target_pose, elapsed / duration)
             _send_pose(datapool, WBCCommand, action_topic, command, sequence)
             sequence += 1
             motion_started = True
-            errors = pose_errors(current, config.target)
+            errors = pose_errors(current, target_pose)
             arrived = elapsed >= duration and all(
                 distance <= config.position_threshold_m
                 and angle <= config.rotation_threshold_deg
                 for distance, angle in errors
             )
-            stable = stable + 1 if arrived else 0
+            if not arrived:
+                stable = 0
+            elif latest_at != counted_at:
+                stable += 1
+            counted_at = latest_at
             if time.monotonic() >= next_log:
                 logger.info(
-                    "left/right homing error (m, deg): %s; stable=%d/%d",
+                    "%s left/right error (m, deg): %s; stable=%d/%d",
+                    action,
                     errors,
                     stable,
                     config.stable_cycles,
@@ -480,13 +535,15 @@ def execute_return_to_initial(
                 next_log = time.monotonic() + 1.0
             if stable >= config.stable_cycles:
                 completed = True
-                logger.info("both arms reached the configured initial poses")
+                logger.info("%s reached the target EE poses", action)
                 return {
                     "success": True,
                     "moved": True,
-                    "summary": "Both arms reached the configured initial poses.",
+                    "summary": f"{action} reached the target EE poses.",
                     "target_frame": "base_link",
-                    "target_xyzw": target,
+                    "target_xyzw": list(target_pose),
+                    "start_xyzw": list(start),
+                    "measured_xyzw": list(current),
                     "position_error_m": [errors[0][0], errors[1][0]],
                     "rotation_error_deg": [errors[0][1], errors[1][1]],
                     "stable_cycles": stable,
@@ -500,7 +557,9 @@ def execute_return_to_initial(
                 if current is not None:
                     _send_pose(datapool, WBCCommand, action_topic, current, sequence)
                     time.sleep(0.1)
-                    logger.warning("homing stopped; sent a hold at the current EE pose")
+                    logger.warning(
+                        "%s stopped; sent a hold at the current EE pose", action
+                    )
         finally:
             if owns_session:
                 session.close()
