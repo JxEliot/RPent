@@ -16,6 +16,7 @@ from typing import Annotated, Any, Callable, Literal
 from pydantic import BeforeValidator, Field
 
 from robots.seer_dual_arm.cartesian import coerce_arm, execute_cartesian_delta
+from robots.seer_dual_arm.gripper import _percent, execute_gripper
 from robots.seer_dual_arm.homing import HomingSession, execute_return_to_initial
 from rpent.tools import ToolResult, tool
 from rpent.utils.logging import get_logger
@@ -58,9 +59,9 @@ class SeerDualArmPrimitives:
                 check_cancelled=self._check_cancelled,
                 session=self._session,
             )
-            if not result["moved"]:
+            if not self._runtime["live"]:
                 logger.info(
-                    "EE motion preview: %s",
+                    "Seer action preview: %s",
                     result,
                 )
             return ToolResult(data=result)
@@ -113,3 +114,35 @@ class SeerDualArmPrimitives:
         return self._execute(
             execute_cartesian_delta, action="rotate_delta", arm=arm, delta=delta_rpy
         )
+
+    @tool
+    def open_gripper(
+        self,
+        arm: Annotated[Literal["left", "right", "both"], BeforeValidator(coerce_arm)],
+    ) -> ToolResult:
+        """Open selected grippers. Both sides use separate topic commands."""
+        return self._execute(execute_gripper, action="open", arm=arm)
+
+    @tool
+    def close_gripper(
+        self,
+        arm: Annotated[Literal["left", "right", "both"], BeforeValidator(coerce_arm)],
+    ) -> ToolResult:
+        """Close selected grippers. A target position does not establish a grasp."""
+        return self._execute(execute_gripper, action="close", arm=arm)
+
+    @tool
+    def set_gripper_position(
+        self,
+        arm: Annotated[Literal["left", "right", "both"], BeforeValidator(coerce_arm)],
+        position: Annotated[
+            float, BeforeValidator(lambda value: _percent(value, "position"))
+        ],
+    ) -> ToolResult:
+        """Set selected grippers to 0-100, where 0 is closed and 100 open."""
+        return self._execute(execute_gripper, action="set", arm=arm, position=position)
+
+    @tool
+    def get_gripper_state(self) -> ToolResult:
+        """Read both grippers' service status and measured feedback in live mode."""
+        return self._execute(execute_gripper, action="state")

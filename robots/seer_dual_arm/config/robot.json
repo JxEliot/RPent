@@ -1,5 +1,17 @@
 {
   "teleop": {
+    "gripper": {
+      "open_position": 100,
+      "close_position": 0,
+      "velocity": 100,
+      "acceleration": 100,
+      "deceleration": 100,
+      "force": 100,
+      "position_tolerance": 2,
+      "status_timeout_s": 3,
+      "action_timeout_s": 10,
+      "max_status_age_s": 0.5
+    },
     "cartesian": {
       "max_translation_m": 0.10,
       "max_rotation_rad": 0.5,

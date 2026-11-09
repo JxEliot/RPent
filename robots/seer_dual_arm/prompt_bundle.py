@@ -28,7 +28,7 @@ def system_prompt(variables: Mapping[str, object] | None = None) -> PromptNode:
         "rotate_delta(arm, delta_rpy) rotates one EE by extrinsic XYZ "
         "Euler radians about base_link axes (q_delta * q_current), holding its position. "
         "Single-arm delta actions hold the other arm at its measured start pose. "
-        "All tools leave grippers unchanged. rotate_delta accepts left or right. "
+        "Arm motion tools leave grippers unchanged. rotate_delta accepts left or right. "
         "For example, 左臂沿 base_link 的 "
         "Z 轴正方向移动 2 厘米 means move_delta(left, [0, 0, 0.02]); "
         "右臂绕 base_link 的 Z 轴正向旋转 10 度 means "
@@ -39,6 +39,11 @@ def system_prompt(variables: Mapping[str, object] | None = None) -> PromptNode:
         "the request into smaller calls to bypass the limit. Questions about capabilities "
         "or how homing works are not requests to move. Clarify ambiguous requests; "
         "explain unsupported actions without inventing tools or motion targets. "
+        "open_gripper(arm), close_gripper(arm), and set_gripper_position(arm, position) "
+        "control left, right, or both grippers using separate topic commands. "
+        "Position is 0-100: 0 closed, 100 open. Ask when the side or position is ambiguous. "
+        "get_gripper_state() reads both sides in live mode. The independent gripper service "
+        "must already be running. Never claim a successful grasp from position alone. "
         "Claude exposes these tools as mcp__rpent__<name>.",
         "MODE": (
             "LIVE: motion tools send real robot commands. The operator enabled "
@@ -51,7 +56,10 @@ def system_prompt(variables: Mapping[str, object] | None = None) -> PromptNode:
             "Real motion requires the operator to restart with --live."
         ),
         "RESULT": "Report the tool result faithfully. Claim arrival only when the tool "
-        "reports success=true and moved=true. On error, explain it and wait for the "
+        "arm tool reports success=true and moved=true, or a gripper tool reports "
+        "success=true and target_observed=true. Gripper results are observations, "
+        "not request-correlated acknowledgements; report uncertainty on timeout or partial "
+        "commands. On error, explain it and wait for the "
         "operator; do not retry motion automatically. Never run shell commands or "
         "modify configuration to perform robot actions or change the execution mode.",
         "SESSION": (

@@ -8,8 +8,9 @@ WBC command and measured-pose topics used by
 ``SeerTeleoperationService/return_to_initial.sh``. Motion is implemented
 inside ``robots/seer_dual_arm/homing.py`` and ``cartesian.py``; it calls the Python SDK directly,
 without executing the shell script or importing the external service. The
-configuration lives inside this integration. Both grippers are
-left unchanged. No VLA, camera, or teleoperation service is needed.
+configuration lives inside this integration. Arm actions leave the grippers
+unchanged. Gripper control uses an independently managed service. No VLA,
+camera, or teleoperation service is needed.
 
 Install
 -------
@@ -40,7 +41,7 @@ Edit files under ``robots/seer_dual_arm/config/``:
    * - File
      - Purpose
    * - ``robot.json``
-     - Initial poses and homing thresholds under ``teleop.homing``; increment limits and arrival thresholds under ``teleop.cartesian``.
+     - Initial poses and homing thresholds under ``teleop.homing``; increment limits under ``teleop.cartesian``; gripper commands and timeouts under ``teleop.gripper``.
    * - ``robokit.json``
      - SDK DDS address, domain, and namespace for live mode.
    * - ``api.toml``
@@ -216,6 +217,24 @@ override them with ``--duration``, ``--timeout``, ``--feedback-timeout``, and
 ``--hz``. If motion is interrupted while fresh feedback remains available, the
 runner publishes a hold at the measured current pose.
 
-This integration controls arm end effectors only. It does not command either
-gripper, and it does not run a VLA. Hardware behavior still needs to be
-verified on the connected Seer controller before operational use.
+Gripper control
+---------------
+
+Start the compatible gripper service separately; RPent does not start it. The
+reference service opens both grippers on startup, so ensure the workspace is
+clear first. In a live conversation, request opening or closing either side,
+setting a position, or reading gripper state. Preview mode does not read device
+state or send commands. Positions range from 0 (closed) to 100 (open); command
+parameters and timeouts are configured under ``teleop.gripper``.
+
+Commands use ``/GripCmd/Gripper-000`` and ``/GripCmd/Gripper-001``; commands
+for both sides are separate and not guaranteed to be simultaneous. Before
+publishing, RPent requires consecutive fresh ``/GripperService/Status``
+heartbeats. Afterwards it waits for a matching applied command and new measured
+feedback. Status has no request ID, so observing the target does not establish
+which command caused it or prove a successful grasp. A timeout or partial
+publish leaves the outcome unknown; check both sides and avoid other publishers.
+The service may deduplicate repeated commands; without new feedback they time out.
+
+This integration does not run a VLA. Gripper behavior still needs verification
+with the connected controller and independent service.

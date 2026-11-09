@@ -4,7 +4,7 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| `robot.json` | `teleop.homing` 配置初始末端位姿和归位阈值；`teleop.cartesian` 配置末端增量上限及到位阈值。 |
+| `robot.json` | `teleop.homing` 配置初始位；`teleop.cartesian` 配置末端增量；`teleop.gripper` 配置夹爪动作参数和超时。 |
 | `robokit.json` | SDK 的 DDS 地址、domain 和 namespace，真机模式使用。 |
 | `api.toml` | API planner 默认读取的模型、地址和认证信息；仅保存在本机。 |
 | `api.example.toml` | 不含凭据的 API 配置模板，可提交到 Git。 |
@@ -37,6 +37,10 @@
 例如输入“以 base_link 的 +Z 为上，双臂同时向上移动 10 厘米”，对应
 `move_delta("both", [0, 0, 0.10])`；“右臂绕 base_link 的 Z 轴正向旋转 0.1 弧度”对应
 `rotate_delta("right", [0, 0, 0.1])`。
+
+夹爪通过单独启动的 service 控制。真机对话中可输入“张开左夹爪”“关闭双夹爪”“将右夹爪设为 50”或“查看夹爪状态”。
+位置 0 为闭合，100 为张开；速度、加速度、减速度、力和超时在 `teleop.gripper` 中配置。
+参考 service 启动时会打开两个夹爪。双侧命令分别发送，不保证同步；状态没有请求 ID，超时或部分发送时请检查实际状态。
 
 首次配置 API 时复制模板并填写中转站信息：
 

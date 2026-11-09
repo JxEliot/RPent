@@ -189,6 +189,10 @@ def test_claude_chat_exposes_homing_without_builtin_or_file_tools(
         "mcp__rpent__return_to_initial",
         "mcp__rpent__move_delta",
         "mcp__rpent__rotate_delta",
+        "mcp__rpent__open_gripper",
+        "mcp__rpent__close_gripper",
+        "mcp__rpent__set_gripper_position",
+        "mcp__rpent__get_gripper_state",
         "mcp__rpent__finish",
     }
     toolkit.close()
