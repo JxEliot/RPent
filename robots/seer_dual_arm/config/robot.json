@@ -1,0 +1,20 @@
+{
+  "teleop": {
+    "homing": {
+      "enabled": true,
+      "initial_poses": {
+        "left": {
+          "pos": [0.63, 0.27, 1.05],
+          "quat": [0.49872768, -0.03564683, 0.86382169, 0.06174212]
+        },
+        "right": {
+          "pos": [0.63, -0.27, 1.05],
+          "quat": [0.49872786, 0.03564439, 0.86382199, -0.06173789]
+        }
+      },
+      "position_threshold_m": 0.02,
+      "rotation_threshold_deg": 5.0,
+      "stable_cycles": 15
+    }
+  }
+}

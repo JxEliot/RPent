@@ -24,7 +24,9 @@
    rpent --robot libero --suite libero_10_task --task 0 --seed 1 \
      --planner api --model anthropic:claude-opus-4-8 --tui
 
-模型认证配置见 :doc:`configure_planner`。``--tui`` 不能与 ``--dashboard`` 同时使用。真机配置及人工确认方式见 :doc:`../real_world_robots/franka` 和 :doc:`../real_world_robots/dual_franka`。
+模型认证配置见 :doc:`configure_planner`。
+:doc:`Seer 对话集成 <../real_world_robots/seer_dual_arm>` 使用空白输入框启动，等待用户动作指令，不会自动执行预设任务。
+``--tui`` 不能与 ``--dashboard`` 同时使用。真机配置及人工确认方式见 :doc:`../real_world_robots/franka` 和 :doc:`../real_world_robots/dual_franka`。
 
 .. _dashboard-usage:
 

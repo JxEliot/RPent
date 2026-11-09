@@ -275,6 +275,10 @@ exclude = ["tests*", "docs*", "examples*", "docker*", "toolkits*"]
 [tool.setuptools.package-data]
 "rpent.dashboard" = ["*.html", "static/*.css", "static/*.js"]
 "robots.yam" = ["config/*.yaml", "config/*.json", "guides/*.md"]
+"robots.seer_dual_arm" = ["config/robot.json", "config/robokit.json", "config/api.example.toml", "config/README.md"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["api.toml", "config/api.toml"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

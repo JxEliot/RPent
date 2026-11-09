@@ -74,6 +74,13 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--api-config",
+        "--api-codex-config",
+        default=None,
+        metavar="PATH",
+        help="Read local API settings from TOML (also accepts Codex config).",
+    )
+    parser.add_argument(
         "--timeout-s",
         type=int,
         default=None,
@@ -178,6 +185,8 @@ def main() -> int:
     """Run one connectivity check and report it. Returns 0 on success."""
     parser = _parser()
     args = parser.parse_args()
+    if args.api_config and args.planner != "api":
+        parser.error("--api-config requires --planner api")
     # Mirrors the run CLI: the flag reaches the api model only, so accepting
     # it for the SDK backends would test an endpoint the run cannot use.
     if args.base_url and args.planner in BASE_URL_ENV_BY_PLANNER:
@@ -192,6 +201,7 @@ def main() -> int:
             model=args.model,
             base_url=args.base_url,
             timeout_s=args.timeout_s,
+            api_config=args.api_config,
         )
     )
     if args.as_json:

@@ -174,12 +174,14 @@ class LlmCheckRequest:
             optional for ``claude_code`` and ``codex``.
         base_url: Base URL overriding the backend's own env var.
         timeout_s: Wall-clock cap. Defaults per backend when ``None``.
+        api_config: Explicit custom API provider configuration file.
     """
 
     planner: str = "api"
     model: str | None = None
     base_url: str | None = None
     timeout_s: int | None = None
+    api_config: str | None = None
 
     def resolved_timeout_s(self) -> int:
         """Return the effective timeout, applying the per-backend default."""
@@ -452,12 +454,31 @@ def _describe(exc: BaseException) -> str:
 def _check_api(request: LlmCheckRequest) -> LlmCheckResult:
     """Probe the pydantic-ai ``api`` planner with one minimal request."""
     model = (request.model or "").strip()
+    settings = None
+    if request.api_config:
+        from rpent.planner.api_config import load_api_config
+
+        try:
+            settings = load_api_config(request.api_config)
+        except (OSError, ValueError) as exc:
+            return LlmCheckResult(
+                ok=False,
+                status=STATUS_MISSING_CONFIG,
+                planner="api",
+                detail=_describe(exc),
+            )
+        model = model or settings.model
     provider_name = model.split(":", 1)[0] if ":" in model else ""
     key_env = _API_KEY_ENV.get(provider_name)
     base_url_env = _API_BASE_URL_ENV.get(provider_name)
     key_present = bool(os.environ.get(key_env)) if key_env else None
+    if settings is not None:
+        key_env = None
+        key_present = bool(settings.api_key or settings.headers)
 
     def _result(status: str, **kwargs: Any) -> LlmCheckResult:
+        if settings is not None and "detail" in kwargs:
+            kwargs["detail"] = settings.redact(kwargs["detail"])
         return LlmCheckResult(
             ok=status == STATUS_OK,
             status=status,
@@ -465,7 +486,7 @@ def _check_api(request: LlmCheckRequest) -> LlmCheckResult:
             model=model or None,
             credential_env=key_env,
             credential_present=key_present,
-            base_url=request.base_url,
+            base_url=request.base_url or (settings.base_url if settings else None),
             base_url_env=base_url_env,
             **kwargs,
         )
@@ -502,13 +523,15 @@ def _check_api(request: LlmCheckRequest) -> LlmCheckResult:
         return _result(STATUS_SDK_ERROR, detail=_describe(exc))
 
     try:
-        api_model = build_api_model(model, request.base_url)
+        api_model = build_api_model(
+            model,
+            request.base_url,
+            **({"api_config": request.api_config} if settings else {}),
+        )
     except UserError as exc:
         return _result(_classify_user_error(exc), detail=_describe(exc))
     except ValueError as exc:
-        # ``model`` is non-empty by the checks above, so build_api_model's own
-        # ValueError cannot fire here: this comes from provider resolution,
-        # where infer_provider raises ValueError for an unknown prefix.
+        # Includes unknown prefixes and relay/model protocol mismatches.
         return _result(STATUS_UNSUPPORTED_PROVIDER, detail=_describe(exc))
 
     timeout_s = request.resolved_timeout_s()

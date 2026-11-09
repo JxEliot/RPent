@@ -49,9 +49,6 @@ RPent 通过一个 CLI 参数选择 Agentic Planner 的后端：
 具体需要传入哪些数值，取决于机器人和控制器。planner 收到的工具说明会列出
 数值的个数及各自允许的范围。启用后，planner 仍可使用 VLA 和脚本工具。
 
-``api`` 规划器（直接调用模型 API）
--------------------------------------
-
 ``direct`` 规划器
 ------------------
 
@@ -65,6 +62,9 @@ RPent 通过一个 CLI 参数选择 Agentic Planner 的后端：
 
    rpent --robot seer_dual_arm --planner direct \
      --direct-tool return_to_initial
+
+``api`` 规划器（直接调用模型 API）
+-------------------------------------
 
 ``--planner api`` 是默认选项。它使用 Pydantic AI 原生工具调用循环，并要求 ``--model`` 带有模型提供商前缀。当前项目安装的依赖包含 Anthropic 和 OpenAI 集成，因此可以直接使用 Anthropic Messages API、OpenAI Responses API，以及 OpenAI 兼容的 Chat Completions API。
 
@@ -86,6 +86,15 @@ RPent 通过一个 CLI 参数选择 Agentic Planner 的后端：
 - ``anthropic:*`` → ``ANTHROPIC_BASE_URL`` / ``ANTHROPIC_API_KEY``
 - ``openai:*`` / ``openai-chat:*`` → ``OPENAI_BASE_URL`` /
   ``OPENAI_API_KEY``
+
+终端运行时，``--api-config PATH`` 从 TOML 读取 ``model``、``base_url``、
+``wire_api``（``responses`` 或 ``chat``）、``api_key``、可选的 ``env_key``
+（默认 ``OPENAI_API_KEY``）和 ``[http_headers]``。文件中的非空 Key 优先于环境变量。
+也可传入 ``--api-config ~/.codex/config.toml`` 读取 Codex 当前自定义 provider；
+``--api-codex-config`` 是同一选项的别名。未传 ``--model`` 时使用文件中的模型；
+``--base-url`` 可覆盖文件中的服务地址。此选项不读取 CLI OAuth 凭据，暂不支持 Dashboard。
+``rpent-check-llm`` 也支持同一选项。Seer 默认本地配置及完整对话示例见
+:doc:`../real_world_robots/seer_dual_arm`。
 
 ``api`` 规划器的相关参数：
 
@@ -114,6 +123,7 @@ RPent 为 Claude 规划会话关闭文件系统配置来源，因此不会自动
 - ``--model`` **不要** 加模型提供商前缀；省略时默认使用 ``sonnet``。
 - 非交互运行受 ``--planner-timeout-s`` 限制；默认读取 ``CELL_TIMEOUT_S``，未设置时为 ``1200`` 秒。``--tui`` 模式不应用这一时限。
 - 通过 ``--claude-code-max-budget-usd`` 设置美元预算（默认取 ``MAX_BUDGET_USD`` 环境变量或 ``10``）。
+- ``--claude-code-tools ''`` 关闭 Claude 内置工具，同时保留 RPent 注册的工具；Seer 固定动作对话默认使用此配置。
 - RPent 的依赖中已包含 Claude Agent SDK；该 SDK 自带 Claude Code 二进制文件，无需单独安装 CLI。认证通常使用 ``ANTHROPIC_API_KEY``，详见 `Claude Agent SDK 文档 <https://code.claude.com/docs/en/agent-sdk/overview>`_。
 
 通过 Claude Code 使用本地模型

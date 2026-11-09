@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
     from rpent.utils.daemon import ProcessDaemon
 
 
-DEFAULT_SERVICE_ROOT = Path("/home/seer/RBK/SeerTeleoperationService")
+CONFIG_DIR = Path(__file__).resolve().parent / "config"
 
 
 def get_robot_spec() -> RobotSpec:
@@ -39,7 +40,9 @@ def get_robot_spec() -> RobotSpec:
         parse_config=_parse_config,
         init_runtime=_init_runtime,
         is_real_robot=True,
-        requires_operator_confirmation=lambda args: bool(args.live),
+        # The homing tool never reads stdin; the TUI owns operator input.
+        requires_operator_confirmation=lambda args: bool(args.live and not args.tui),
+        validate_args=_validate_args,
     )
 
 
@@ -60,27 +63,30 @@ def get_toolkit(
         dashboard_events=dashboard_events,
         memory=memory,
         state_output_dir=config.output_dir,
+        interactive=bool(config.prompt_vars.get("interactive")),
     )
 
 
 def _add_cli_args(parser: argparse.ArgumentParser, use_dashboard: bool) -> None:
     """Register only the configuration needed by the fixed-action test."""
     del use_dashboard
-    parser.set_defaults(memory_profile="local")
+    parser.set_defaults(memory_profile="local", claude_code_tools="")
     parser.add_argument(
         "--service-root",
         default=None,
-        help="SeerTeleoperationService checkout (default: /home/seer/RBK/SeerTeleoperationService).",
+        help="Read robot configs from an external SeerTeleoperationService checkout instead.",
     )
     parser.add_argument(
+        "--robot-config",
         "--rbk-config",
+        dest="rbk_config",
         default=None,
-        help="Seer rbk_config.json containing teleop.homing.initial_poses.",
+        help="Homing JSON (default: robots/seer_dual_arm/config/robot.json).",
     )
     parser.add_argument(
         "--robokit-config",
         default=None,
-        help="robokit DDS config; defaults to <service-root>/config/controller/robokit.json.",
+        help="DDS JSON (default: robots/seer_dual_arm/config/robokit.json).",
     )
     parser.add_argument(
         "--live",
@@ -94,24 +100,37 @@ def _add_cli_args(parser: argparse.ArgumentParser, use_dashboard: bool) -> None:
     parser.add_argument("--node-name", default="rpent_seer_homing")
 
 
+def _validate_args(args: argparse.Namespace) -> None:
+    if args.tui and (sys.stdin is None or not sys.stdin.isatty()):
+        raise ValueError("--tui requires an interactive terminal (TTY)")
+    if args.dashboard:
+        raise ValueError("Seer supports terminal chat with --tui; no Dashboard yet")
+    if args.memory_profile != "local":
+        raise ValueError("Seer fixed actions require --memory-profile local")
+    if args.planner == "api" and args.api_config is None:
+        local_api_config = CONFIG_DIR / "api.toml"
+        if local_api_config.is_file():
+            args.api_config = str(local_api_config)
+
+
+def _config_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    """Resolve local defaults or explicitly selected external controller files."""
+    if args.service_root:
+        service_config = Path(args.service_root).expanduser() / "config"
+        default_robot = service_config / "rbk_config.json"
+        default_robokit = service_config / "controller" / "robokit.json"
+    else:
+        default_robot = CONFIG_DIR / "robot.json"
+        default_robokit = CONFIG_DIR / "robokit.json"
+    return (
+        Path(args.rbk_config or default_robot).expanduser().resolve(),
+        Path(args.robokit_config or default_robokit).expanduser().resolve(),
+    )
+
+
 def _parse_config(args: argparse.Namespace) -> RunConfig:
     """Resolve paths and validate scalar motion settings without SDK imports."""
-    service_root = (
-        Path(args.service_root or DEFAULT_SERVICE_ROOT).expanduser().resolve()
-    )
-    rbk_config = (
-        Path(args.rbk_config or service_root / "config" / "rbk_config.json")
-        .expanduser()
-        .resolve()
-    )
-    robokit_config = (
-        Path(
-            args.robokit_config
-            or service_root / "config" / "controller" / "robokit.json"
-        )
-        .expanduser()
-        .resolve()
-    )
+    rbk_config, robokit_config = _config_paths(args)
     if not rbk_config.is_file():
         raise ValueError(f"Seer rbk config does not exist: {rbk_config}")
     if args.live and not robokit_config.is_file():
@@ -141,10 +160,10 @@ def _parse_config(args: argparse.Namespace) -> RunConfig:
         output_dir=output_dir,
         prompt_vars={
             "memory_dir": str(memory_dir),
-            "service_root": str(service_root),
             "rbk_config": str(rbk_config),
             "robokit_config": str(robokit_config),
             "live": bool(args.live),
+            "interactive": bool(args.tui),
         },
         task_desc={
             "robot": "seer_dual_arm",
@@ -163,21 +182,10 @@ def _init_runtime(
 ) -> tuple[list["ProcessDaemon"], dict[str, Any]]:
     """Return lazy hardware settings; the toolkit owns the optional SDK import."""
     del output_dir, dashboard_events, components
-    service_root = (
-        Path(args.service_root or DEFAULT_SERVICE_ROOT).expanduser().resolve()
-    )
+    rbk_config, robokit_config = _config_paths(args)
     return [], {
-        "rbk_config": Path(
-            args.rbk_config or service_root / "config" / "rbk_config.json"
-        )
-        .expanduser()
-        .resolve(),
-        "robokit_config": Path(
-            args.robokit_config
-            or service_root / "config" / "controller" / "robokit.json"
-        )
-        .expanduser()
-        .resolve(),
+        "rbk_config": rbk_config,
+        "robokit_config": robokit_config,
         "live": bool(args.live),
         "duration": float(args.duration),
         "timeout": float(args.timeout),

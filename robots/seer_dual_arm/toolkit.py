@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -24,7 +25,21 @@ if TYPE_CHECKING:
 
 
 class SeerDualArmToolkit(Toolkit):
-    """Common RPent tools plus one Seer dual-arm homing action."""
+    """Homing and session completion tools for the Seer robot."""
+
+    def _register_common_tools(self) -> None:
+        # Fixed actions need session completion, without model-owned file edits.
+        from rpent.tools.common import CommonTools
+
+        finish = CommonTools(memory=self.memory).finish
+        if self._interactive:
+            finish = replace(
+                finish,
+                description="End the conversation only when the user explicitly asks "
+                "to exit. After each homing action, report its result and wait for "
+                "another message instead of calling finish.",
+            )
+        self.add_tool(finish)
 
     def __init__(
         self,
@@ -33,7 +48,9 @@ class SeerDualArmToolkit(Toolkit):
         dashboard_events: DashboardEventSink,
         memory: MemoryManager,
         state_output_dir: Path | str,
+        interactive: bool = False,
     ) -> None:
+        self._interactive = interactive
         state = EnvState(Path(state_output_dir))
         super().__init__(dashboard_events=dashboard_events, state=state, memory=memory)
         self._primitives = SeerDualArmPrimitives(

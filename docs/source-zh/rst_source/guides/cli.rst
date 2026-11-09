@@ -55,6 +55,12 @@
    * - ``--no-images``
      - ``false``
      - 仅 ``api``：不向模型发送图像。
+   * - ``--api-config`` / ``--api-codex-config``
+     - ``—``
+     - 仅用于 ``api`` 终端运行：从 TOML 读取模型、地址和凭据，也支持 Codex 自定义 provider。显式的 ``--model`` 和 ``--base-url`` 可覆盖其中的默认值。
+   * - ``--claude-code-tools``
+     - ``Bash Read Write Glob Grep``
+     - Claude 内置工具名。空字符串表示禁用内置工具，机器人工具仍可用；Seer 默认使用空列表。
    * - ``--claude-code-max-budget-usd``
      - ``—``
      - Claude Code 美元预算；默认取 ``MAX_BUDGET_USD`` 或 10。

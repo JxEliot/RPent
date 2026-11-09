@@ -169,28 +169,56 @@ class Planner(ABC):
 # ---------------------------------------------------------------------------
 
 
-def build_api_model(model: str | None, base_url: str | None = None) -> "Model":
+def build_api_model(
+    model: str | None,
+    base_url: str | None = None,
+    *,
+    api_config: str | Path | None = None,
+) -> "Model":
     """Resolve the pydantic-ai model used by the API planner.
 
     This is the single provider-resolution path: both :func:`build_planner`
     and the connectivity check in :mod:`rpent.planner.check` call it, so a
     passing check constructs the same model a real run will.
 
-    The API key is always read from the provider's own env vars (e.g.
+    By default, the API key is read from the provider's own env vars (e.g.
     ``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``). When ``base_url`` is given it
     overrides the provider's base URL env var (e.g. ``ANTHROPIC_BASE_URL`` /
-    ``OPENAI_BASE_URL``).
+    ``OPENAI_BASE_URL``). An explicit ``api_config`` supplies the endpoint,
+    model and credentials from a TOML file instead.
 
     Args:
         model: Provider-prefixed model id, e.g. ``anthropic:claude-opus-4-8``.
         base_url: Base URL overriding the provider's own env var.
+        api_config: Local API settings or selected Codex custom provider.
 
     Returns:
         The resolved pydantic-ai ``Model``.
 
     Raises:
-        ValueError: If ``model`` is empty.
+        ValueError: If the model or selected relay configuration is invalid.
     """
+    if api_config is not None:
+        from openai import AsyncOpenAI
+        from pydantic_ai.models import infer_model
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        from rpent.planner.api_config import load_api_config
+
+        settings = load_api_config(api_config)
+        model = model or settings.model
+        prefix = model.split(":", 1)[0]
+        if prefix not in {"openai", "openai-chat", "openai-responses"}:
+            raise ValueError("--api-config requires an OpenAI model prefix")
+        client = AsyncOpenAI(
+            base_url=base_url or settings.base_url,
+            # OpenAI's SDK requires a non-empty key even for header-auth relays.
+            api_key=settings.api_key or "unused",
+            default_headers=settings.headers,
+        )
+        provider = OpenAIProvider(openai_client=client)
+        return infer_model(model, provider_factory=lambda _: provider)
+
     if not model:
         raise ValueError(
             "the 'api' planner requires a model id; pass --model with a "
@@ -225,6 +253,7 @@ def build_planner(
     robot_name: str,
     direct_tool_name: str | None = None,
     direct_tool_args: dict | None = None,
+    api_config: str | Path | None = None,
     base_url: str | None = None,
     model: str | None = None,
     memory_dir: str | Path | None = None,
@@ -232,11 +261,12 @@ def build_planner(
     planner_timeout_s: int | None = None,
     reasoning_effort: str = "none",
     claude_code_max_budget_usd: float | None = None,
+    claude_code_tools: str = "Bash Read Write Glob Grep",
     dashboard_events: DashboardEventSink,
     no_images: bool = False,
     interactive: bool = False,
 ) -> Planner:
-    """Build a planner for the given backend, resolving credentials from env vars."""
+    """Build a planner using environment credentials or an explicit API config."""
     # Imports are deferred to avoid a circular import: api_loop / claude_code /
     # codex all import from this module (PlannerResult).
 
@@ -253,7 +283,11 @@ def build_planner(
     if planner_type == "api":
         from rpent.planner.api_loop import ApiAgentLoop
 
-        api_model = build_api_model(model, base_url)
+        api_model = build_api_model(
+            model,
+            base_url,
+            **({"api_config": api_config} if api_config else {}),
+        )
         api_timeout_s = planner_timeout_s
         if api_timeout_s is None:
             api_timeout_s = int(os.environ.get("CELL_TIMEOUT_S", "1200"))
@@ -281,6 +315,7 @@ def build_planner(
             model=model or "sonnet",
             timeout_s=cc_timeout_s,
             max_budget_usd=cc_budget,
+            allowed_tools=claude_code_tools,
             extra_dirs=[str(memory_dir or get_memory_dir(robot_name))],
             output_path=Path(output_dir) / f"claude_{recipe_tag}.txt",
             dashboard_events=dashboard_events,

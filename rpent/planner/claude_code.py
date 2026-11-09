@@ -365,7 +365,7 @@ class ClaudeCodePlanner(Planner):
             max_turns=max_turns,
             max_budget_usd=self._max_budget_usd,
             max_buffer_size=_MAX_STREAM_BUFFER_BYTES,
-            tools=builtins or None,
+            tools=builtins,
             allowed_tools=list(dict.fromkeys(allowed)),
             mcp_servers={
                 "rpent": _build_rpent_server(

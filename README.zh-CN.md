@@ -194,6 +194,10 @@ rpent --robot libero --suite libero_object_swap --task 2 --seed 0 \
   --planner claude_code --model claude-opus-4-8 --tui
 ```
 
+Seer 双臂可通过终端与 Claude 或 GPT-6 Astra 对话，执行回初始位动作。
+支持复用中转站 API 配置，启动后等待用户输入，详见
+[Seer 对话指南](docs/source-zh/rst_source/real_world_robots/seer_dual_arm.rst)。
+
 ### 实时 Dashboard
 
 加上 `--dashboard` 后，会启动本地 Dashboard，并在终端输出访问地址。Session 配置全部来自命令行，页面打开后直接进入实时监控；服务就绪后，通过 `/rpent-task <suite> <task> <seed>` 启动任务。页面会实时显示智能体的推理过程、相机画面和动作时间线，任务结束后可以继续提交下一任务。使用 `--dashboard-language zh-cn` 可切换到中文界面。

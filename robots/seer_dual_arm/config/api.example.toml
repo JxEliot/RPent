@@ -1,0 +1,12 @@
+# Copy to api.toml and set the endpoint and credentials for your relay.
+model = "gpt-6-astra"
+base_url = "https://relay.example.com/openai"
+wire_api = "responses" # Use "chat" for Chat Completions.
+
+# Standard bearer authentication: fill api_key, or leave it empty and use
+# OPENAI_API_KEY (or set env_key to a different environment variable name).
+api_key = ""
+
+# For header authentication, leave api_key empty and set your relay's header.
+# [http_headers]
+# x-bf-vk = "YOUR_RELAY_KEY"

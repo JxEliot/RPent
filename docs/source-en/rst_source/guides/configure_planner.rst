@@ -62,9 +62,6 @@ The required values depend on the robot and controller. The tool description
 provided to the planner lists the expected number of values and their allowed
 ranges. VLA and scripted tools remain available when direct actions are enabled.
 
-The ``api`` Planner (direct Model API)
----------------------------------------
-
 The ``direct`` Planner
 ----------------------
 
@@ -80,6 +77,9 @@ and requires ``--live`` to publish motion commands. See
 
    rpent --robot seer_dual_arm --planner direct \
      --direct-tool return_to_initial
+
+The ``api`` Planner (direct Model API)
+---------------------------------------
 
 ``--planner api`` is the default. It uses the native Pydantic AI tool-calling
 runtime and requires a provider prefix in ``--model``. The
@@ -106,6 +106,17 @@ needed):
 - ``anthropic:*`` → ``ANTHROPIC_BASE_URL`` / ``ANTHROPIC_API_KEY``
 - ``openai:*`` / ``openai-chat:*`` → ``OPENAI_BASE_URL`` /
   ``OPENAI_API_KEY``
+
+On terminal runs, ``--api-config PATH`` reads TOML fields ``model``, ``base_url``,
+``wire_api`` (``responses`` or ``chat``), ``api_key``, optional ``env_key``
+(default ``OPENAI_API_KEY``), and ``[http_headers]``. A nonempty file key takes
+precedence over the environment. It also accepts a Codex configuration such as
+``--api-config ~/.codex/config.toml`` to read its selected custom provider;
+``--api-codex-config`` is an alias. The file's model is used unless ``--model``
+is given; ``--base-url`` overrides its endpoint. This option does not read CLI
+OAuth credentials or support Dashboard sessions. ``rpent-check-llm`` accepts
+the same option. :doc:`../real_world_robots/seer_dual_arm` documents Seer's
+default local configuration and a complete chat example.
 
 Relevant ``api`` planner knobs:
 
@@ -144,6 +155,8 @@ Notes:
   The limit is not applied in ``--tui`` mode.
 - A dollar budget can be set via ``--claude-code-max-budget-usd``
   (defaults to ``MAX_BUDGET_USD`` env or ``10``).
+- ``--claude-code-tools ''`` disables Claude's built-in tools while preserving
+  RPent's registered tools. This is the default for Seer fixed-action chat.
 - RPent already depends on the Claude Agent SDK, which bundles the
   Claude Code binary; no separate CLI installation is required.
   Authentication normally uses ``ANTHROPIC_API_KEY``. See the

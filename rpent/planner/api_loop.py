@@ -634,10 +634,14 @@ class _Session(AbstractCapability):
         return discarded
 
     async def run_cli(self, agent: _ConversationAgent, prompt: str) -> None:
-        """Run the preset task, then hand its history to the native CLI."""
+        """Run a preset when present, or wait for the first user message."""
         from rich.console import Console
 
         console = Console()
+        if not prompt.strip():
+            console.print("Enter a robot instruction; /exit to close.")
+            await agent.to_cli(prog_name="rpent", usage_limits=self.limits)
+            return
         console.print("Task context:\n" + prompt, markup=False, highlight=False)
         console.print(
             "Starting the task. You can enter follow-up instructions after it "

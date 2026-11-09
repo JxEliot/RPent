@@ -12,11 +12,14 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from robots.seer_dual_arm.robot_spec import get_robot_spec
 
 
+@pytest.mark.parametrize("config_source", ["local", "external", "explicit"])
 def test_seer_direct_preview_runs_without_tty_memory_sync_or_sdk(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, config_source: str
 ) -> None:
     from rpent.cli import main as cli
     from rpent.memory import loading
@@ -40,6 +43,17 @@ def test_seer_direct_preview_runs_without_tty_memory_sync_or_sdk(
         encoding="utf-8",
     )
     output_dir = tmp_path / "output"
+    config_file = service / "config" / "rbk_config.json"
+    if config_source == "local":
+        config_file.rename(service / "config" / "robot.json")
+        monkeypatch.setattr(
+            "robots.seer_dual_arm.robot_spec.CONFIG_DIR", service / "config"
+        )
+        config_flags = []
+    elif config_source == "external":
+        config_flags = ["--service-root", str(service)]
+    else:
+        config_flags = ["--robot-config", str(config_file)]
     robot_spec = get_robot_spec()
     monkeypatch.setattr(cli, "enumerate_robots", lambda: ("seer_dual_arm",))
     monkeypatch.setattr(cli, "get_robot_spec", lambda name: robot_spec)
@@ -62,8 +76,7 @@ def test_seer_direct_preview_runs_without_tty_memory_sync_or_sdk(
             "direct",
             "--direct-tool",
             "return_to_initial",
-            "--service-root",
-            str(service),
+            *config_flags,
             "--output-dir",
             str(output_dir),
             "--memory-dir",

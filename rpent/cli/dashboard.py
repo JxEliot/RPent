@@ -325,6 +325,9 @@ def _run_dashboard_task(
                         planner_timeout_s=args.planner_timeout_s,
                         reasoning_effort=args.reasoning_effort,
                         claude_code_max_budget_usd=args.claude_code_max_budget_usd,
+                        claude_code_tools=getattr(
+                            args, "claude_code_tools", "Bash Read Write Glob Grep"
+                        ),
                         dashboard_events=state,
                         no_images=args.no_images,
                     )

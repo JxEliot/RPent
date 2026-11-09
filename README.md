@@ -193,6 +193,10 @@ rpent --robot libero --suite libero_object_swap --task 2 --seed 0 \
   --planner claude_code --model claude-opus-4-8 --tui
 ```
 
+For Seer dual-arm homing through a terminal conversation with Claude or GPT-6
+Astra, see the [Seer chat guide](docs/source-en/rst_source/real_world_robots/seer_dual_arm.rst).
+It supports a configured API relay and waits for your first instruction.
+
 ### Live Dashboard
 
 Add `--dashboard` to start a local Dashboard and print its URL in the terminal. Session settings come from the CLI, and the page opens directly in the live monitor. Once the services are ready, start a task with `/rpent-task <suite> <task> <seed>`. The page streams agent reasoning, camera views, and the action timeline, and you can submit another task after the current one finishes. Use `--dashboard-language zh-cn` for the Chinese UI.

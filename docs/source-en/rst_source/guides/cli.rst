@@ -60,6 +60,12 @@ These options control the planner, memory, output directory, and Dashboard.
    * - ``--no-images``
      - ``false``
      - ``api`` only: omit images from model requests.
+   * - ``--api-config`` / ``--api-codex-config``
+     - ``—``
+     - ``api`` terminal runs only: read model, endpoint, and credentials from TOML. Also accepts a Codex custom provider. Explicit ``--model`` and ``--base-url`` override its defaults.
+   * - ``--claude-code-tools``
+     - ``Bash Read Write Glob Grep``
+     - Claude built-in tool names. An empty string disables them; robot tools remain available. Seer defaults to an empty list.
    * - ``--claude-code-max-budget-usd``
      - ``—``
      - Claude Code dollar budget; defaults to ``MAX_BUDGET_USD`` or 10.

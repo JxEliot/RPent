@@ -1,0 +1,7 @@
+{
+  "host_ip": "127.0.0.1",
+  "dds_domain": {
+    "ros2_id": 0,
+    "rbk_namespace": "SRC5000"
+  }
+}

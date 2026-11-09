@@ -35,6 +35,8 @@ conversation history. Use ``/exit`` to close it. For example:
      --planner api --model anthropic:claude-opus-4-8 --tui
 
 Configure credentials as described in :doc:`configure_planner`.
+The :doc:`Seer chat integration <../real_world_robots/seer_dual_arm>` starts
+with blank input and waits for an action request instead of running a preset.
 ``--tui`` and ``--dashboard`` cannot be used together.
 For physical robot setup and human confirmation, see the
 :doc:`../real_world_robots/franka` and :doc:`../real_world_robots/dual_franka` guides.

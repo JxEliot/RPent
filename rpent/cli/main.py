@@ -165,6 +165,14 @@ def _build_argparser() -> argparse.ArgumentParser:
             "API base URL, for the 'api' planner only. claude_code and codex take their endpoint from ANTHROPIC_BASE_URL / CODEX_BASE_URL instead; passing this flag with either is an error rather than a silent no-op."
         ),
     )
+    ap.add_argument(
+        "--api-config",
+        "--api-codex-config",
+        metavar="PATH",
+        default=None,
+        help="Read API endpoint, model, and credentials from TOML (also accepts Codex config). "
+        "Requires --planner api; terminal runs only.",
+    )
     ap.add_argument("--max-turns", type=int, default=100)
     ap.add_argument("--max-tokens", type=int, default=8192)
     ap.add_argument(
@@ -192,6 +200,12 @@ def _build_argparser() -> argparse.ArgumentParser:
         "Terminal interactive API/Claude sessions are exempt. "
         "Defaults to CODEX_TIMEOUT_S (codex only), "
         "CELL_TIMEOUT_S, or 1200.",
+    )
+    ap.add_argument(
+        "--claude-code-tools",
+        default="Bash Read Write Glob Grep",
+        help="Space-separated Claude built-in tools; an empty string disables them. "
+        "Robot tools remain available. Seer defaults to no built-in tools.",
     )
     ap.add_argument(
         "--claude-code-max-budget-usd",
@@ -328,12 +342,16 @@ def _start_continuation_session(
         output_dir=output_dir,
         recipe_tag=recipe_tag,
         robot_name=args.robot_name,
+        api_config=getattr(args, "api_config", None),
         base_url=args.base_url,
         model=args.model,
         max_tokens=args.max_tokens,
         planner_timeout_s=args.planner_timeout_s,
         reasoning_effort=args.reasoning_effort,
         claude_code_max_budget_usd=args.claude_code_max_budget_usd,
+        claude_code_tools=getattr(
+            args, "claude_code_tools", "Bash Read Write Glob Grep"
+        ),
         dashboard_events=dashboard_events,
         no_images=args.no_images,
         interactive=args.tui,
@@ -494,6 +512,16 @@ def main() -> int:
             robot_spec.validate_args(args)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.api_config:
+        if args.planner != "api" or args.dashboard:
+            parser.error("--api-config requires --planner api without --dashboard")
+        try:
+            from rpent.planner.api_config import load_api_config
+
+            api_config = load_api_config(args.api_config)
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+        args.model = args.model or api_config.model
     if args.dashboard:
         from rpent.cli.dashboard import run_dashboard_session
 
@@ -528,6 +556,8 @@ def main() -> int:
         robot_name=robot_name,
         direct_tool_name=args.direct_tool,
         direct_tool_args=args.direct_tool_args,
+        api_config=args.api_config,
+        claude_code_tools=args.claude_code_tools,
         memory_dir=prompt_vars.get("memory_dir"),
         base_url=args.base_url,
         model=args.model,
@@ -575,12 +605,15 @@ def main() -> int:
                 else {}
             ),
         )
-        logger.info(
-            "interactive mode on: the built-in task is pre-filled — "
-            "edit it and press Enter, submit it as-is, or clear it to "
-            "type your own. Once running, type to steer the agent. "
-            "/help for commands."
-        )
+        if user_msg.strip():
+            logger.info(
+                "interactive mode on: the built-in task is pre-filled — "
+                "edit it and press Enter, submit it as-is, or clear it to "
+                "type your own. Once running, type to steer the agent. "
+                "/help for commands."
+            )
+        else:
+            logger.info("interactive mode on: enter a message at you>; /quit to exit.")
         # Resolve the opening prompt on a background thread so the user can type
         # it while the (slow) env/VLA servers boot below.
         await_first_prompt = start_first_prompt_resolver(input_queue)

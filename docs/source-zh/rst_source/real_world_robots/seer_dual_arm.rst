@@ -2,9 +2,12 @@ Seer 双臂机器人
 ================
 
 此集成提供一个固定动作：将两个机械臂末端返回到 Seer
-``rbk_config.json`` 中 ``teleop.homing.initial_poses`` 配置的位置。它使用机器人自带的
+``robots/seer_dual_arm/config/robot.json`` 中 ``teleop.homing.initial_poses`` 配置的位置。它使用机器人自带的
 ``seer-robokit-py`` 包，以及 ``SeerTeleoperationService/return_to_initial.sh``
-所使用的 WBC 命令和末端位姿反馈 topic。它不会启动模型、相机、遥操作或夹爪服务；两个夹爪保持原状。
+所使用的 WBC 命令和末端位姿反馈 topic。动作在仓库内的
+``robots/seer_dual_arm/homing.py`` 中实现，直接调用 Python SDK，
+不会执行外部 shell 脚本或导入原服务；配置直接存放在此集成目录内。
+两个夹爪保持原状，无需启动 VLA、相机或遥操作服务。
 
 安装
 ----
@@ -19,6 +22,85 @@ Seer 双臂机器人
 
 此 extra 安装 ``seer-robokit-py==0.1.6``，与参考的 Seer 服务使用版本一致。RPent
 自身的基础依赖仍然需要安装；此集成不需要 VLA、仿真器、相机或夹爪服务 extra。
+以下命令使用 ``uv run --no-sync`` 运行此环境，避免解析仓库内其他机器人的可选依赖。
+
+配置文件
+--------
+
+编辑 ``robots/seer_dual_arm/config/`` 中的文件：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - 文件
+     - 用途
+   * - ``robot.json``
+     - ``teleop.homing`` 下的左右臂初始末端位姿及到位阈值。
+   * - ``robokit.json``
+     - 真机模式所用的 SDK DDS 地址、domain 和 namespace。
+   * - ``api.toml``
+     - 模型、接口地址与凭据；文件存在时，API planner 默认读取它。
+   * - ``api.example.toml``
+     - 可提交到仓库、不含凭据的 API 配置模板。
+
+初始位和 DDS 参数与参考的本机 Seer 服务一致。``pos`` 是 ``base_link`` 坐标系下的
+``[x, y, z]``，单位米；``quat`` 是 ``[x, y, z, w]`` 四元数。使用默认配置无需原服务目录。
+
+首次使用时，复制 API 模板并填写中转站配置：
+
+.. code-block:: bash
+
+   cp robots/seer_dual_arm/config/api.example.toml robots/seer_dual_arm/config/api.toml
+   chmod 600 robots/seer_dual_arm/config/api.toml
+
+填写 ``model``、``base_url``、``wire_api``（``responses`` 或 ``chat``）。标准 bearer 认证
+可直接填写 ``api_key``，或通过 ``env_key`` 指定凭据环境变量（默认 ``OPENAI_API_KEY``）。
+自定义请求头认证使用 ``[http_headers]``，例如 ``x-bf-vk = "YOUR_RELAY_KEY"``。
+``api.toml`` 已加入 Git 忽略，也不会打入安装包。
+可通过 ``--robot-config``、``--robokit-config``、``--api-config`` 分别覆盖文件路径。
+
+通过中转站与 GPT-6 Astra 对话
+-----------------------------
+
+先检查连接，再启动预览对话：
+
+.. code-block:: bash
+
+   uv run --no-sync rpent-check-llm --planner api \
+     --api-config robots/seer_dual_arm/config/api.toml
+
+   uv run --no-sync rpent \
+     --robot seer_dual_arm --planner api \
+     --reasoning-effort low --tui
+
+终端会等待第一条输入，收到消息后才请求模型。输入“回到初始位置”即可让模型调用工具。
+预览模式只显示目标，模型会说明机器人未移动。每次回复后可以继续输入，使用 ``/exit`` 退出。
+检查预览并清空工作区后，在同一对话启动命令后添加 ``--live``，重新启动即可执行真机动作。
+启动对话本身不会移动机器人，用户的动作指令才会触发工具。
+
+可通过 ``--model openai:gpt-6-astra`` 覆盖文件中配置的其他模型。
+Responses 接口对应 ``openai:<model>``，Chat Completions 对应 ``openai-chat:<model>``。
+也可通过 ``--api-config ~/.codex/config.toml``（别名 ``--api-codex-config``）
+显式复用已有 Codex 自定义 provider。它直接读取地址、模型与请求头等配置，
+不会启动 Codex，也不读取 ``auth.json`` 中的 OAuth 登录信息。
+中转站除了文本生成，还必须支持 function calling。
+
+与 Claude 对话
+--------------
+
+按 :doc:`../guides/configure_planner` 配置 ``ANTHROPIC_API_KEY``；
+使用兼容的中转站时，再配置 ``ANTHROPIC_BASE_URL``。然后运行：
+
+.. code-block:: bash
+
+   uv run --no-sync rpent \
+     --robot seer_dual_arm --planner claude_code \
+     --model sonnet --tui
+
+在空白的 ``you>`` 提示符后输入“回到初始位置”。启动时添加 ``--live`` 可启用真机动作。
+此集成只向 Claude 提供回初始位和结束会话工具，默认关闭内置 shell 与文件工具。
+使用 ``/quit`` 退出。Claude、API 和 direct planner 共用同一套内部回初始位实现。
 
 预览
 ----
@@ -27,16 +109,15 @@ Seer 双臂机器人
 
 .. code-block:: bash
 
-   uv run --extra seer-dual-arm rpent \
+   uv run --no-sync rpent \
      --robot seer_dual_arm \
      --planner direct \
-     --direct-tool return_to_initial \
-     --service-root /home/seer/RBK/SeerTeleoperationService
+     --direct-tool return_to_initial
 
-默认情况下，``--service-root`` 会选择该目录下的 ``config/rbk_config.json``
-和 ``config/controller/robokit.json``。可通过 ``--rbk-config`` 或
-``--robokit-config`` 分别指定其他文件。机器人配置必须包含
-``teleop.homing.enabled`` 和左右臂的 ``initial_poses``。
+默认使用此集成的 ``config/robot.json`` 和 ``config/robokit.json``。
+显式传入 ``--service-root`` 时，改用外部服务目录的 ``config/rbk_config.json``
+和 ``config/controller/robokit.json``。``--rbk-config`` 保留为 ``--robot-config`` 的别名。机器人配置必须包含
+左右臂的 ``initial_poses``；如果定义了 ``teleop.homing.enabled``，其值必须为 true。
 
 真机动作
 --------
@@ -45,11 +126,10 @@ Seer 双臂机器人
 
 .. code-block:: bash
 
-   uv run --extra seer-dual-arm rpent \
+   uv run --no-sync rpent \
      --robot seer_dual_arm \
      --planner direct \
      --direct-tool return_to_initial \
-     --service-root /home/seer/RBK/SeerTeleoperationService \
      --live
 
 控制器必须在 ``/RobotControl/WbcDebugTF`` 发布实测变换。动作会读取左右臂新鲜的末端反馈，
