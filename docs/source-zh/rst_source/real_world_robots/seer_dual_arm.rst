@@ -74,6 +74,11 @@ Seer 双臂机器人
      --robot seer_dual_arm --planner api \
      --reasoning-effort low --tui
 
+在控制器上，也可直接运行 ``./start_seer_chat.sh``，脚本使用 ``/opt/uv/uv`` 启动上述对话。
+将脚本顶部的 ``LIVE=false`` 改为 ``LIVE=true`` 即可启用真机模式；
+``UV_BIN`` 和 ``REASONING_EFFORT`` 也在顶部配置。
+脚本会切换到项目目录，并透传其他参数，例如 ``./start_seer_chat.sh --output-dir logs/my-chat``。
+
 终端会等待第一条输入，收到消息后才请求模型。输入“回到初始位置”即可让模型调用工具。
 预览模式只显示目标，模型会说明机器人未移动。每次回复后可以继续输入，使用 ``/exit`` 退出。
 检查预览并清空工作区后，在同一对话启动命令后添加 ``--live``，重新启动即可执行真机动作。

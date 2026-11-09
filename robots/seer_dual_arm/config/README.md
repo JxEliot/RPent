@@ -26,11 +26,13 @@ chmod 600 robots/seer_dual_arm/config/api.toml
 安装环境后，从仓库根目录启动预览对话：
 
 ```bash
-uv run --no-sync rpent --robot seer_dual_arm --planner api --reasoning-effort low --tui
+./start_seer_chat.sh
 ```
 
 输入“回到初始位置”触发一次预览，再输入后续消息可继续对话；`/exit` 退出。
-启动命令加 `--live` 才会发布真机动作。`--robot-config`、`--robokit-config` 和 `--api-config` 可分别覆盖文件路径。
+脚本顶部的 `LIVE=false` 表示预览，改为 `LIVE=true` 表示真机模式；`UV_BIN` 默认是控制器的 `/opt/uv/uv`。
+脚本会切换到项目目录，并将额外参数传给 RPent，例如 `./start_seer_chat.sh --output-dir logs/my-chat`。
+`--robot-config`、`--robokit-config` 和 `--api-config` 可分别覆盖文件路径。
 显式使用 `--service-root` 时，机器人配置取自对应外部目录；API 配置仍单独选择。
 
 完整安装、Claude 对话及真机前提见[使用指南](../../../docs/source-zh/rst_source/real_world_robots/seer_dual_arm.rst)。

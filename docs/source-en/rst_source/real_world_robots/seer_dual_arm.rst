@@ -80,6 +80,12 @@ Check the connection, then start a preview conversation:
      --robot seer_dual_arm --planner api \
      --reasoning-effort low --tui
 
+On the controller, ``./start_seer_chat.sh`` starts the same conversation using
+``/opt/uv/uv``. Edit ``LIVE=false`` at the top of the script to ``LIVE=true``
+for live mode. ``UV_BIN`` and ``REASONING_EFFORT`` are also editable there.
+The launcher selects its own project directory and forwards extra arguments,
+for example ``./start_seer_chat.sh --output-dir logs/my-chat``.
+
 The terminal waits for your first message before contacting the model. Type
 ``回到初始位置`` to request the registered action. In preview mode the model
 reports the targets and explains that the robot did not move. After each
